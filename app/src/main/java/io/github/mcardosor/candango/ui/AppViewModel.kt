@@ -50,9 +50,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         const val WINDOW_MIN = 180 // "agora até daqui a 3 horas"
         private const val POLL_MS = 15_000L
+        // sem azul: o azul fica reservado ao marcador "você está aqui"
         private val PALETTE = listOf(
-            "#0B8A5F", "#1565C0", "#C62828", "#6A1B9A", "#EF6C00", "#00838F",
-            "#AD1457", "#2E7D32", "#4527A0", "#D84315", "#00695C", "#283593",
+            "#0B8A5F", "#5D4037", "#C62828", "#6A1B9A", "#EF6C00", "#00838F",
+            "#AD1457", "#2E7D32", "#4527A0", "#D84315", "#00695C", "#827717",
         )
 
         fun colorFor(numero: String?): String =

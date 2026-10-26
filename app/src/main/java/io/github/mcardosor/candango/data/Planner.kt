@@ -59,7 +59,7 @@ object Planner {
     private const val MAX_TRANSFER_RESULTS = 6
 
     fun walkMinutes(m: Int) = (m / WALK_M_PER_MIN).roundToInt()
-    private fun walkM(straightM: Double) = (straightM * WALK_DETOUR).roundToInt()
+    fun walkM(straightM: Double) = (straightM * WALK_DETOUR).roundToInt()
 
     /**
      * Opções de [origin] a [dest] com embarque entre [start] e [start] + [windowMin] minutos:

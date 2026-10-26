@@ -65,6 +65,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -76,10 +77,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.github.mcardosor.candango.data.Geo
 import io.github.mcardosor.candango.data.LatLon
 import io.github.mcardosor.candango.data.Line
 import io.github.mcardosor.candango.data.LiveEta
 import io.github.mcardosor.candango.data.PlanOption
+import io.github.mcardosor.candango.data.Planner
 import io.github.mcardosor.candango.data.Repo
 import io.github.mcardosor.candango.data.Time
 import kotlinx.coroutines.delay
@@ -92,6 +95,7 @@ import java.util.Locale
 private val Green = Color(0xFF0B8A5F)
 private val LiveGreen = Color(0xFF00A86B)
 private val Muted = Color(0xFF6B7280)
+private val MeBlue = Color(0xFF1E88E5) // mesmo azul do marcador "você" no mapa
 
 fun hex(c: String): Color = Color(android.graphics.Color.parseColor(c))
 
@@ -104,6 +108,9 @@ fun AppRoot(vm: AppViewModel) {
     var controller by remember { mutableStateOf<MapController?>(null) }
     val density = LocalDensity.current
     val screenH = LocalConfiguration.current.screenHeightDp
+    var panelHeightPx by remember { mutableStateOf(0) }
+    val fitBottomPx = with(density) { (screenH * 0.48f).dp.roundToPx() }
+    val fitTopPx = with(density) { 200.dp.roundToPx() }
 
     BackHandler(enabled = vm.canGoBack || vm.searchFor != null || vm.searchLinesOnly || vm.pickOnMapFor != null) { vm.back() }
 
@@ -118,9 +125,7 @@ fun AppRoot(vm: AppViewModel) {
         // Enquadra o mapa só quando o "assunto" da tela muda
         LaunchedEffect(c, fitKey(vm), vm.loaded) {
             if (c != null && vm.loaded) {
-                val bottom = with(density) { (screenH * 0.48f).dp.roundToPx() }
-                val top = with(density) { 200.dp.roundToPx() }
-                fitPoints(vm).takeIf { it.isNotEmpty() }?.let { c.fit(it, bottom, top) }
+                fitPoints(vm).takeIf { it.isNotEmpty() }?.let { c.fit(it, fitBottomPx, fitTopPx) }
             }
         }
         LaunchedEffect(c, vm.loaded) { if (c != null && vm.loaded) c.setAllStops(Repo.stops) }
@@ -140,7 +145,23 @@ fun AppRoot(vm: AppViewModel) {
             }
         }
 
-        BottomPanel(vm, Modifier.align(Alignment.BottomCenter))
+        BottomPanel(vm, Modifier.align(Alignment.BottomCenter).onSizeChanged { panelHeightPx = it.height })
+
+        // botão "voltar para mim", logo acima do painel
+        val me = vm.myLocation
+        if (c != null && me != null && vm.pickOnMapFor == null) {
+            Surface(
+                onClick = { c.center(me, 16.0, fitBottomPx, fitTopPx) },
+                shape = CircleShape, color = Color.White, shadowElevation = 6.dp,
+                modifier = Modifier.align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = with(density) { panelHeightPx.toDp() } + 12.dp)
+                    .size(48.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.MyLocation, "Centralizar na minha localização", tint = MeBlue)
+                }
+            }
+        }
 
         if (vm.searchFor != null || vm.searchLinesOnly) SearchOverlay(vm)
 
@@ -221,13 +242,19 @@ private fun fitPoints(vm: AppViewModel): List<LatLon> = when (val s = vm.screen)
     is Screen.Route -> listOfNotNull(vm.effectiveOrigin?.pos, vm.dest?.pos) +
         s.option.legs.flatMap { it.dir.shapeBetween(it.boardAlong, it.alightAlong) }
     is Screen.LineView -> s.line.dirs.getOrNull(s.dirIndex)?.shape ?: emptyList()
-    is Screen.StopView -> listOf(s.stop.pos)
+    is Screen.StopView -> listOfNotNull(s.stop.pos, walkableMe(vm, s.stop.pos))
     else -> listOfNotNull(vm.effectiveOrigin?.pos, vm.dest?.pos)
 }
 
+/** Minha localização, se estiver perto o bastante de [p] para ir a pé. */
+private fun walkableMe(vm: AppViewModel, p: LatLon): LatLon? =
+    vm.myLocation?.takeIf { Geo.dist(it, p) <= WALKABLE_M }
+
+private const val WALKABLE_M = 3000.0
+
 private fun renderMap(c: MapController, vm: AppViewModel) {
+    c.setMe(vm.myLocation)
     val markers = buildList {
-        vm.myLocation?.let { add(MapMarker(it, "eu")) }
         vm.effectiveOrigin?.takeIf { !it.isMyLocation }?.let { add(MapMarker(it.pos, "origem", "Partida")) }
         vm.dest?.let { add(MapMarker(it.pos, "destino", "Destino")) }
     }
@@ -264,7 +291,7 @@ private fun renderMap(c: MapController, vm: AppViewModel) {
             c.setMarkers(markers)
         }
         is Screen.StopView -> {
-            c.setLines(emptyList())
+            c.setLines(listOfNotNull(walkableMe(vm, s.stop.pos)?.let { MapLine(listOf(it, s.stop.pos), "#1E88E5", dashed = true) }))
             c.setStops(listOf(s.stop), "#0B8A5F")
             c.setBuses(allBuses())
             c.setMarkers(markers)
@@ -740,6 +767,18 @@ private fun StopContent(vm: AppViewModel, stop: io.github.mcardosor.candango.dat
             Column(Modifier.weight(1f)) {
                 Text(stop.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text("${Repo.dirsAtStop[stop.idx].map { it.first.line }.distinct().size} linhas passam aqui · próximas 3h", fontSize = 12.sp, color = Muted)
+                walkableMe(vm, stop.pos)?.let { me ->
+                    val m = Planner.walkM(Geo.dist(me, stop.pos))
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.DirectionsWalk, null, tint = MeBlue, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "${if (m < 1000) "$m m" else "%.1f km".format(Locale("pt", "BR"), m / 1000.0)} · " +
+                                "${Planner.walkMinutes(m).coerceAtLeast(1)} min a pé de você",
+                            fontSize = 12.sp, color = MeBlue, fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
             }
             OutlinedButton(onClick = { vm.setEndpoint(Field.DEST, Endpoint(stop.label, stop.pos)) }) { Text("Ir para cá") }
         }

@@ -4,6 +4,7 @@ import android.graphics.PointF
 import io.github.mcardosor.candango.data.Bus
 import io.github.mcardosor.candango.data.LatLon
 import io.github.mcardosor.candango.data.Stop
+import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
@@ -16,6 +17,7 @@ import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
+import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
@@ -43,7 +45,7 @@ import org.maplibre.geojson.Point
 /** Linha desenhada no mapa. */
 data class MapLine(val points: List<LatLon>, val color: String, val dashed: Boolean = false)
 
-/** Marcador simples (origem, destino, parada destacada, minha localização). */
+/** Marcador simples (origem, destino). A minha localização tem camada própria. */
 data class MapMarker(val pos: LatLon, val kind: String, val label: String = "")
 
 /** Ônibus desenhado no mapa. */
@@ -55,6 +57,8 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
         const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
         val BRASILIA = LatLng(-15.7939, -47.8828)
         private const val FONT = "Noto Sans Bold"
+        private const val ME_COLOR = "#1E88E5"
+        private const val MAX_FIT_ZOOM = 17.0
     }
 
     private val allStopsSrc = GeoJsonSource("todas-paradas")
@@ -62,6 +66,7 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
     private val stopsSrc = GeoJsonSource("paradas")
     private val busesSrc = GeoJsonSource("onibus")
     private val markersSrc = GeoJsonSource("marcadores")
+    private val meSrc = GeoJsonSource("eu")
 
     init {
         style.addSource(allStopsSrc)
@@ -69,6 +74,7 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
         style.addSource(stopsSrc)
         style.addSource(busesSrc)
         style.addSource(markersSrc)
+        style.addSource(meSrc)
 
         // todas as paradas, só com zoom de rua (tocáveis)
         style.addLayer(CircleLayer("todas-paradas-camada", "todas-paradas").withProperties(
@@ -100,21 +106,26 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
         ).apply { minZoom = 12.5f })
 
         style.addLayer(CircleLayer("marcadores-camada", "marcadores").withProperties(
-            circleRadius(org.maplibre.android.style.expressions.Expression.match(
-                get("kind"), literal(8f),
-                org.maplibre.android.style.expressions.Expression.stop("eu", 7f),
-            )),
+            circleRadius(8f),
             circleColor(org.maplibre.android.style.expressions.Expression.match(
                 get("kind"), literal("#455A64"),
                 org.maplibre.android.style.expressions.Expression.stop("origem", "#2E7D32"),
                 org.maplibre.android.style.expressions.Expression.stop("destino", "#C62828"),
-                org.maplibre.android.style.expressions.Expression.stop("eu", "#1E88E5"),
             )),
             circleStrokeColor("#FFFFFF"), circleStrokeWidth(3f),
         ))
         style.addLayer(SymbolLayer("marcadores-rotulo", "marcadores").withProperties(
             textField(get("label")), textFont(arrayOf(FONT)), textSize(12f), textColor("#1B1B1F"),
             textHaloColor("#FFFFFF"), textHaloWidth(2f), textOffset(arrayOf(0f, -1.6f)),
+        ))
+
+        // "você está aqui": halo translúcido + ponto azul maior que os ônibus, sempre por cima de tudo
+        style.addLayer(CircleLayer("eu-halo", "eu").withProperties(
+            circleRadius(22f), circleColor(ME_COLOR), circleOpacity(0.18f),
+            circleStrokeColor(ME_COLOR), circleStrokeWidth(1f),
+        ))
+        style.addLayer(CircleLayer("eu-ponto", "eu").withProperties(
+            circleRadius(9f), circleColor(ME_COLOR), circleStrokeColor("#FFFFFF"), circleStrokeWidth(3.5f),
         ))
 
         map.uiSettings.isRotateGesturesEnabled = false
@@ -168,6 +179,12 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
         }))
     }
 
+    fun setMe(p: LatLon?) {
+        meSrc.setGeoJson(FeatureCollection.fromFeatures(
+            listOfNotNull(p?.let { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) })
+        ))
+    }
+
     /** O que há sob o toque: uma parada (índice) ou a linha de um ônibus. */
     fun hitTest(latLng: LatLng): Pair<Int?, String?> {
         val pt: PointF = map.projection.toScreenLocation(latLng)
@@ -177,18 +194,27 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
         return stop to bus
     }
 
+    /** Enquadra os pontos na faixa visível do mapa, entre o cartão de cima e o painel de baixo. */
     fun fit(points: List<LatLon>, bottomPaddingPx: Int, topPaddingPx: Int) {
         if (points.isEmpty()) return
         if (points.size == 1) {
-            map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(points[0].lat, points[0].lon), 15.0))
+            center(points[0], 15.0, bottomPaddingPx, topPaddingPx)
             return
         }
         val b = LatLngBounds.Builder().apply { points.forEach { include(LatLng(it.lat, it.lon)) } }.build()
-        map.animateCamera(CameraUpdateFactory.newLatLngBounds(b, 80, topPaddingPx, 80, bottomPaddingPx))
+        val cam = map.getCameraForLatLngBounds(b, intArrayOf(80, topPaddingPx, 80, bottomPaddingPx)) ?: return
+        // pontos muito próximos (ex.: você a 50 m da parada) dariam zoom exagerado
+        val zoom = cam.zoom.coerceAtMost(MAX_FIT_ZOOM)
+        map.animateCamera(CameraUpdateFactory.newCameraPosition(
+            CameraPosition.Builder(cam).zoom(zoom).padding(0.0, topPaddingPx.toDouble(), 0.0, bottomPaddingPx.toDouble()).build()
+        ))
     }
 
-    fun center(p: LatLon, zoom: Double = 15.0) {
-        map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(p.lat, p.lon), zoom))
+    fun center(p: LatLon, zoom: Double, bottomPaddingPx: Int, topPaddingPx: Int) {
+        map.animateCamera(CameraUpdateFactory.newCameraPosition(
+            CameraPosition.Builder().target(LatLng(p.lat, p.lon)).zoom(zoom)
+                .padding(0.0, topPaddingPx.toDouble(), 0.0, bottomPaddingPx.toDouble()).build()
+        ))
     }
 
     val cameraCenter: LatLon
