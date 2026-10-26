@@ -1,7 +1,7 @@
 // Service worker do Candango: guarda o app e os dados fixos para abrir rápido (e sem internet).
 // GPS dos ônibus, busca de endereços e mapa sempre vêm da rede.
 // Ao publicar mudanças, troque a versão para os celulares baixarem os arquivos novos.
-const CACHE = "candango-v0.3.1";
+const CACHE = "candango-v0.3.2";
 const SHELL = [
   "./", "index.html", "app.css", "manifest.webmanifest", "dados.json",
   "js/app.js", "js/model.js", "js/planner.js", "js/live.js", "js/map.js",
@@ -11,7 +11,13 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // "reload" pula o cache HTTP do navegador: o GitHub Pages deixa arquivos guardados por 10 min,
+  // e sem isso a versão nova do cache podia nascer com os arquivos antigos
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (e) => {
@@ -32,7 +38,7 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const hit = await cache.match(req, { ignoreSearch: true });
-      const fresh = fetch(req)
+      const fresh = fetch(req, { cache: "no-cache" })
         .then((res) => { if (res.ok) cache.put(req, res.clone()); return res; })
         .catch(() => hit);
       return hit ?? fresh;
