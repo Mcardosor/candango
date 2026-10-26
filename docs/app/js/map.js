@@ -7,6 +7,7 @@ const FONT = ["Noto Sans Bold"];
 export const ME_COLOR = "#1E88E5";
 const MAX_FIT_ZOOM = 17;
 const LONG_PRESS_MS = 550;
+const BUS_PATH = new Path2D("M4 16c0 .88.39 1.67 1 2.22V20a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h8v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm1.5-6H6V6h12v5z");
 
 const fc = (features) => ({ type: "FeatureCollection", features });
 const pt = (p, props = {}) => ({ type: "Feature", geometry: { type: "Point", coordinates: [p.lon, p.lat] }, properties: props });
@@ -66,17 +67,38 @@ export class MapView {
       paint: { "circle-radius": 5, "circle-color": "#FFFFFF", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2.5 },
     });
 
+    // ônibus: marcador na cor da linha com uma ponta girada para onde ele vai, o desenho do ônibus
+    // sempre em pé por cima e o número da linha ao lado (as imagens são geradas em _onImageMissing)
+    const hl = (v) => ["*", v, ["case", ["get", "highlight"], 1.25, 1]];
+    const size = ["interpolate", ["linear"], ["zoom"], 10, hl(0.5), 13, hl(0.8), 15, hl(1)];
+    m.on("styleimagemissing", (e) => this._onImageMissing(e.id));
     m.addLayer({
-      id: "onibus-camada", type: "circle", source: "onibus",
-      paint: {
-        "circle-radius": ["case", ["get", "highlight"], 11, 7],
-        "circle-color": ["get", "color"], "circle-stroke-color": "#FFFFFF", "circle-stroke-width": 2,
+      id: "onibus-camada", type: "symbol", source: "onibus",
+      layout: {
+        "icon-image": ["concat", ["case", ["get", "arrow"], "seta:", "bola:"], ["get", "color"]],
+        "icon-size": size,
+        "icon-rotate": ["get", "heading"],
+        "icon-rotation-alignment": "map",
+        "icon-allow-overlap": true, "icon-ignore-placement": true,
+        "symbol-sort-key": ["case", ["get", "highlight"], 1, 0],
       },
     });
     m.addLayer({
-      id: "onibus-rotulo", type: "symbol", source: "onibus", minzoom: 12.5,
-      layout: { "text-field": ["get", "label"], "text-font": FONT, "text-size": 11, "text-offset": [0, 1.5] },
-      paint: { "text-color": "#1B1B1F", "text-halo-color": "#FFFFFF", "text-halo-width": 1.5 },
+      id: "onibus-glifo", type: "symbol", source: "onibus", minzoom: 11.5,
+      layout: {
+        "icon-image": "onibus-glifo", "icon-size": size,
+        "icon-allow-overlap": true, "icon-ignore-placement": true,
+        "symbol-sort-key": ["case", ["get", "highlight"], 1, 0],
+      },
+    });
+    m.addLayer({
+      id: "onibus-rotulo", type: "symbol", source: "onibus", minzoom: 13,
+      layout: {
+        "text-field": ["get", "label"], "text-font": FONT, "text-size": 11,
+        "text-anchor": "left", "text-offset": [1.1, 0], "text-padding": 1,
+      },
+      // halo grosso na cor da linha vira uma etiqueta com o número em branco
+      paint: { "text-color": "#FFFFFF", "text-halo-color": ["get", "color"], "text-halo-width": 3 },
     });
 
     m.addLayer({
@@ -120,6 +142,46 @@ export class MapView {
     for (const ev of ["touchend", "touchcancel", "touchmove", "movestart", "zoomstart"]) m.on(ev, cancel);
   }
 
+  /** Desenha sob demanda as imagens dos ônibus: "seta:#cor", "bola:#cor" e "onibus-glifo". */
+  _onImageMissing(id) {
+    const [kind, color] = id.split(":");
+    if (!["seta", "bola", "onibus-glifo"].includes(kind) || this.map.hasImage(id)) return;
+    const S = 40, R = 12, C = S / 2, PR = 2; // tamanho lógico, raio, centro, densidade
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = S * PR;
+    const g = cv.getContext("2d");
+    g.scale(PR, PR);
+    if (kind === "onibus-glifo") {
+      // desenho do ônibus (24×24) reduzido para caber dentro do círculo
+      g.translate(C - 7.5, C - 7.5);
+      g.scale(15 / 24, 15 / 24);
+      g.fillStyle = "#FFFFFF";
+      g.fill(BUS_PATH);
+    } else {
+      const shape = new Path2D();
+      if (kind === "seta") {
+        // círculo com uma ponta para cima (o norte); o icon-rotate gira para a direção do ônibus
+        const tip = 2, a = Math.acos(R / (C - tip));
+        shape.moveTo(C, tip);
+        shape.arc(C, C, R, -Math.PI / 2 + a, -Math.PI / 2 - a + 2 * Math.PI);
+        shape.closePath();
+      } else {
+        shape.arc(C, C, R, 0, 2 * Math.PI);
+      }
+      g.shadowColor = "rgba(0,0,0,0.35)";
+      g.shadowBlur = 3;
+      g.fillStyle = color;
+      g.fill(shape);
+      g.shadowColor = "transparent";
+      g.lineWidth = 2;
+      g.lineJoin = "round";
+      g.strokeStyle = "#FFFFFF";
+      g.stroke(shape);
+    }
+    const img = g.getImageData(0, 0, cv.width, cv.height);
+    this.map.addImage(id, { width: cv.width, height: cv.height, data: img.data }, { pixelRatio: PR });
+  }
+
   /** O que há sob o toque: uma parada (índice) e/ou a linha de um ônibus. */
   _hitTest(p) {
     const box = [[p.x - 18, p.y - 18], [p.x + 18, p.y + 18]];
@@ -140,8 +202,14 @@ export class MapView {
   setColoredStops(list) { this._set("paradas", list.map(([s, color]) => pt(s.pos, { color, idx: s.idx }))); }
 
   setBuses(list) {
-    this._set("onibus", list.map(({ bus, color, highlight }) =>
-      pt(bus.pos, { color, label: bus.linha ?? "", linha: bus.linha ?? "", highlight: !!highlight })));
+    this._set("onibus", list.map(({ bus, color, highlight }) => {
+      // direção 0 com o ônibus parado costuma ser "sem direção": aí fica só o círculo
+      const arrow = bus.heading != null && !(bus.heading === 0 && !bus.speedKmh);
+      return pt(bus.pos, {
+        color, label: bus.linha ?? "", linha: bus.linha ?? "", highlight: !!highlight,
+        heading: bus.heading ?? 0, arrow,
+      });
+    }));
   }
 
   setMarkers(list) { this._set("marcadores", list.map((m) => pt(m.pos, { kind: m.kind, label: m.label ?? "" }))); }
