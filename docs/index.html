@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Candango · ônibus do DF em tempo real</title>
+  <meta name="description" content="Veja onde está cada ônibus do Distrito Federal agora, quais linhas te levam ao destino e quanto falta para o seu chegar. Grátis e de código aberto." />
+  <meta property="og:title" content="Candango · ônibus do DF em tempo real" />
+  <meta property="og:description" content="Mapa ao vivo, planejador de viagem com baldeação e previsão de chegada. Grátis, para Android." />
+  <meta property="og:image" content="https://mcardosor.github.io/candango/screenshots/01-mapa-ao-vivo.jpg" />
+  <meta name="theme-color" content="#0B8A5F" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --green: #0B8A5F;
+      --green-dark: #066B49;
+      --ink: #111827;
+      --muted: #5B6472;
+      --bg: #FFFFFF;
+      --soft: #F2F7F5;
+      --card: #FFFFFF;
+      --line: #E3E8E6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #EEF2F0;
+        --muted: #A3ADB8;
+        --bg: #0E1412;
+        --soft: #15201C;
+        --card: #18231F;
+        --line: #26332E;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.55;
+    }
+    a { color: var(--green); }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+
+    header.hero { background: var(--soft); padding: 48px 0 56px; }
+    .hero-grid { display: grid; gap: 36px; align-items: center; grid-template-columns: 1fr; }
+    @media (min-width: 820px) { .hero-grid { grid-template-columns: 1.1fr 0.9fr; } }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 1.15rem; }
+    .brand img { width: 44px; height: 44px; }
+    h1 { font-size: clamp(2rem, 6vw, 3.1rem); line-height: 1.1; margin: 20px 0 10px; letter-spacing: -0.02em; }
+    .tagline { font-style: italic; color: var(--green); font-weight: 600; margin: 0 0 14px; }
+    .lead { font-size: 1.12rem; color: var(--muted); margin: 0 0 28px; max-width: 34em; }
+
+    .download {
+      display: inline-flex; align-items: center; gap: 12px;
+      background: var(--green); color: #fff; text-decoration: none;
+      font-size: 1.15rem; font-weight: 700;
+      padding: 16px 26px; border-radius: 14px;
+      box-shadow: 0 8px 22px rgba(11, 138, 95, 0.32);
+    }
+    .download:hover, .download:focus-visible { background: var(--green-dark); }
+    .download svg { width: 26px; height: 26px; flex: none; }
+    .download small { display: block; font-weight: 500; font-size: 0.8rem; opacity: 0.9; }
+    .meta { margin-top: 14px; font-size: 0.92rem; color: var(--muted); }
+
+    .phone { display: flex; justify-content: center; }
+    .phone img {
+      width: min(300px, 78vw); border-radius: 28px;
+      border: 8px solid #1B1F23; box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+    }
+
+    section { padding: 56px 0; }
+    h2 { font-size: 1.7rem; margin: 0 0 24px; letter-spacing: -0.01em; }
+
+    .features { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+    .feature { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+    .feature .emoji { font-size: 1.6rem; }
+    .feature h3 { margin: 8px 0 6px; font-size: 1.05rem; }
+    .feature p { margin: 0; color: var(--muted); font-size: 0.96rem; }
+
+    .gallery { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x mandatory; }
+    .gallery figure { margin: 0; flex: none; scroll-snap-align: start; text-align: center; }
+    .gallery img { width: 210px; border-radius: 18px; border: 1px solid var(--line); display: block; }
+    .gallery figcaption { font-size: 0.88rem; color: var(--muted); margin-top: 8px; }
+
+    .install { background: var(--soft); }
+    ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; max-width: 680px; }
+    ol.steps li {
+      counter-increment: s; background: var(--card); border: 1px solid var(--line);
+      border-radius: 14px; padding: 16px 18px 16px 64px; position: relative;
+    }
+    ol.steps li::before {
+      content: counter(s); position: absolute; left: 16px; top: 14px;
+      width: 32px; height: 32px; border-radius: 50%; background: var(--green); color: #fff;
+      display: grid; place-items: center; font-weight: 700;
+    }
+    .note { margin-top: 20px; color: var(--muted); font-size: 0.95rem; max-width: 680px; }
+
+    details { border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; background: var(--card); max-width: 760px; }
+    summary { cursor: pointer; font-weight: 600; }
+    details p { color: var(--muted); margin: 10px 0 0; }
+
+    footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: 0.9rem; }
+    footer p { margin: 6px 0; }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="brand"><img src="icon.svg" alt="" /> Candango</div>
+      <h1>Ônibus do DF<br />em tempo real.</h1>
+      <p class="tagline">Can, and go: você pode ir.</p>
+      <p class="lead">Veja onde está cada ônibus agora, descubra quais linhas te levam ao destino, de agora até daqui a 3 horas, e quanto falta para o seu chegar no ponto.</p>
+      <a class="download" href="https://github.com/Mcardosor/candango/releases/latest/download/candango.apk">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
+        <span>Baixar para Android<small>Grátis · APK · Android 8 ou mais recente</small></span>
+      </a>
+      <p class="meta">Sem anúncios, sem cadastro. <a href="#instalar">Como instalar</a> · <a href="https://github.com/Mcardosor/candango">Código aberto no GitHub</a></p>
+    </div>
+    <div class="phone">
+      <img src="screenshots/01-mapa-ao-vivo.jpg" alt="Mapa do Candango com os ônibus ao vivo perto da Rodoviária do Plano Piloto" />
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>O que ele faz</h2>
+    <div class="features">
+      <div class="feature"><div class="emoji">🗺️</div><h3>Mapa ao vivo</h3><p>A posição GPS de todos os ônibus do DF, com o número da linha, atualizada a cada 15 segundos.</p></div>
+      <div class="feature"><div class="emoji">🧭</div><h3>Para onde você vai</h3><p>Escolha partida e destino e veja as linhas que levam até lá, com caminhada e hora de chegada.</p></div>
+      <div class="feature"><div class="emoji">⏰</div><h3>Agora ou daqui a 3 horas</h3><p>Veja o que passa agora, daqui a 1, 2 ou 3 horas, ou no horário que você escolher.</p></div>
+      <div class="feature"><div class="emoji">🔁</div><h3>Baldeação</h3><p>Sem linha direta? O app combina duas linhas e mostra quanto você espera na troca.</p></div>
+      <div class="feature"><div class="emoji">🟢</div><h3>Chega em 7 min</h3><p>Previsão pelo GPS do ônibus que está vindo para o seu ponto, e não só pela tabela.</p></div>
+      <div class="feature"><div class="emoji">🚏</div><h3>Paradas e linhas</h3><p>Toque numa parada para ver tudo que passa ali, ou abra uma linha para ver o trajeto inteiro.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Por dentro do app</h2>
+    <div class="gallery">
+      <figure><img src="screenshots/02-planejador.jpg" alt="Lista de linhas para Taguatinga" loading="lazy" /><figcaption>Linhas até o destino</figcaption></figure>
+      <figure><img src="screenshots/03-rota.jpg" alt="Rota com caminhada e ônibus" loading="lazy" /><figcaption>Passo a passo da rota</figcaption></figure>
+      <figure><img src="screenshots/04-baldeacao.jpg" alt="Opções com troca de ônibus" loading="lazy" /><figcaption>Opções com baldeação</figcaption></figure>
+      <figure><img src="screenshots/05-rota-baldeacao.jpg" alt="Próximas viagens com baldeação" loading="lazy" /><figcaption>Horários encadeados</figcaption></figure>
+      <figure><img src="screenshots/06-parada.jpg" alt="Próximos ônibus numa parada" loading="lazy" /><figcaption>Quem passa na parada</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="install" id="instalar">
+  <div class="wrap">
+    <h2>Como instalar</h2>
+    <ol class="steps">
+      <li>No seu celular Android, toque em <a href="https://github.com/Mcardosor/candango/releases/latest/download/candango.apk"><b>Baixar para Android</b></a>.</li>
+      <li>Quando o download terminar, abra o arquivo <b>candango.apk</b>. Ele aparece nas notificações ou na pasta Downloads.</li>
+      <li>Se aparecer o aviso de <b>"fontes desconhecidas"</b>, toque em <b>Configurações</b>, ative <b>Permitir desta fonte</b> e volte.</li>
+      <li>Toque em <b>Instalar</b>, abra o Candango e permita o acesso à localização para ver as paradas perto de você.</li>
+    </ol>
+    <p class="note">O Candango ainda não está na Play Store, por isso a instalação é pelo arquivo. Para atualizar, baixe de novo e instale por cima. Ainda não há versão para iPhone.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Perguntas frequentes</h2>
+    <details><summary>É de graça? Tem anúncio?</summary><p>É grátis, sem anúncios e sem cadastro. O código é aberto e qualquer pessoa pode conferir.</p></details>
+    <details><summary>É um app oficial do GDF?</summary><p>Não. O Candango é um projeto independente que usa os dados abertos da SEMOB-DF. Ele não tem ligação com o GDF, com a SEMOB nem com as empresas de ônibus.</p></details>
+    <details><summary>Os horários são exatos?</summary><p>Os horários de saída vêm da tabela oficial. A passagem em cada parada é estimada pela distância desde o terminal. Quando o ônibus está com o GPS ligado, aparece a previsão "ao vivo", que é a mais confiável.</p></details>
+    <details><summary>Por que o celular avisa que o app é de "fonte desconhecida"?</summary><p>Porque ele não foi baixado da Play Store. O arquivo é gerado automaticamente a partir do código público no GitHub e assinado sempre com a mesma chave.</p></details>
+    <details><summary>O que o app faz com a minha localização?</summary><p>Usa só no próprio celular, para achar as paradas perto de você e calcular a caminhada. A localização não é enviada para nenhum servidor do Candango, porque não existe servidor do Candango.</p></details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>Candango é código aberto sob a <a href="https://github.com/Mcardosor/candango/blob/main/LICENSE">licença MIT</a>. Feito em Brasília.</p>
+    <p>Dados de transporte: SEMOB-DF. Mapa: <a href="https://openfreemap.org/">OpenFreeMap</a> © <a href="https://www.openstreetmap.org/copyright">colaboradores do OpenStreetMap</a>.</p>
+    <p><a href="https://github.com/Mcardosor/candango/issues/new/choose">Relatar um problema</a> · <a href="https://github.com/Mcardosor/candango/releases">Todas as versões</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

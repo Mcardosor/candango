@@ -1,0 +1,29 @@
+name: 🐞 Algo deu errado
+description: O app travou, mostrou algo estranho ou não funcionou como esperado.
+labels: [bug]
+body:
+  - type: textarea
+    id: oque
+    attributes:
+      label: O que aconteceu?
+      description: Descreva o problema e, se puder, anexe um print da tela.
+    validations:
+      required: true
+  - type: textarea
+    id: passos
+    attributes:
+      label: Como reproduzir
+      placeholder: |
+        1. Abri o app em ...
+        2. Escolhi o destino ...
+        3. Toquei em ...
+  - type: input
+    id: versao
+    attributes:
+      label: Versão do app
+      description: Aparece na página de Releases de onde você baixou (ex.: 0.2.0).
+  - type: input
+    id: celular
+    attributes:
+      label: Celular e versão do Android
+      placeholder: ex. Samsung A15, Android 14

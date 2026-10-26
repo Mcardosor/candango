@@ -1,0 +1,29 @@
+name: 🚌 Horário ou rota errada
+description: O app sugeriu uma linha que não passa, um horário errado ou deixou de mostrar uma opção.
+labels: [dados]
+body:
+  - type: input
+    id: trecho
+    attributes:
+      label: De onde para onde?
+      placeholder: ex. Parada 3482 (Asa Norte) → Taguatinga Centro
+    validations:
+      required: true
+  - type: input
+    id: quando
+    attributes:
+      label: Dia e horário da consulta
+      placeholder: ex. segunda, 26/10, 7h30
+    validations:
+      required: true
+  - type: textarea
+    id: app
+    attributes:
+      label: O que o app mostrou
+    validations:
+      required: true
+  - type: textarea
+    id: real
+    attributes:
+      label: O que aconteceu de verdade
+      description: Qual linha passou, em que horário, ou qual seria a rota certa.

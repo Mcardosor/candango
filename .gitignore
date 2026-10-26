@@ -1,0 +1,12 @@
+.gradle/
+.kotlin/
+build/
+app/build/
+local.properties
+*.apk
+.idea/
+*.iml
+
+# chaves de assinatura nunca vão para o repositório
+*.jks
+*.keystore
