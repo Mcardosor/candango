@@ -61,6 +61,9 @@
     .download:hover, .download:focus-visible { background: var(--green-dark); }
     .download svg { width: 26px; height: 26px; flex: none; }
     .download small { display: block; font-weight: 500; font-size: 0.8rem; opacity: 0.9; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .download.web { background: var(--card); color: var(--green); border: 2px solid var(--green); box-shadow: none; }
+    .download.web:hover, .download.web:focus-visible { background: var(--soft); }
     .meta { margin-top: 14px; font-size: 0.92rem; color: var(--muted); }
 
     .phone { display: flex; justify-content: center; }
@@ -113,10 +116,16 @@
       <h1>Ônibus do DF<br />em tempo real.</h1>
       <p class="tagline">Can, and go: você pode ir.</p>
       <p class="lead">Veja onde está cada ônibus agora, descubra quais linhas te levam ao destino, de agora até daqui a 3 horas, e quanto falta para o seu chegar no ponto.</p>
-      <a class="download" href="https://github.com/Mcardosor/candango/releases/latest/download/candango.apk">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
-        <span>Baixar para Android<small>Grátis · APK · Android 8 ou mais recente</small></span>
-      </a>
+      <div class="actions">
+        <a class="download" href="https://github.com/Mcardosor/candango/releases/latest/download/candango.apk">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
+          <span>Baixar para Android<small>Grátis · APK · Android 8 ou mais recente</small></span>
+        </a>
+        <a class="download web" href="app/">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 1.01 7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>
+          <span>Abrir no navegador<small>iPhone, computador ou qualquer celular</small></span>
+        </a>
+      </div>
       <p class="meta">Sem anúncios, sem cadastro. <a href="#instalar">Como instalar</a> · <a href="https://github.com/Mcardosor/candango">Código aberto no GitHub</a></p>
     </div>
     <div class="phone">
@@ -161,13 +170,21 @@
       <li>Se aparecer o aviso de <b>"fontes desconhecidas"</b>, toque em <b>Configurações</b>, ative <b>Permitir desta fonte</b> e volte.</li>
       <li>Toque em <b>Instalar</b>, abra o Candango e permita o acesso à localização para ver as paradas perto de você.</li>
     </ol>
-    <p class="note">O Candango ainda não está na Play Store, por isso a instalação é pelo arquivo. Para atualizar, baixe de novo e instale por cima. Ainda não há versão para iPhone.</p>
+    <p class="note">O Candango ainda não está na Play Store, por isso a instalação é pelo arquivo. Para atualizar, baixe de novo e instale por cima.</p>
+    <h2 style="margin-top:40px">No iPhone</h2>
+    <ol class="steps">
+      <li>No iPhone, abra <a href="app/"><b>mcardosor.github.io/candango/app</b></a> no <b>Safari</b>.</li>
+      <li>Toque no botão <b>Compartilhar</b> (o quadrado com a seta para cima).</li>
+      <li>Escolha <b>Adicionar à Tela de Início</b> e confirme. O Candango aparece como um app, com ícone próprio.</li>
+    </ol>
+    <p class="note">A versão web tem o mesmo mapa ao vivo, planejador com baldeação e horários do app Android, e também funciona no computador.</p>
   </div>
 </section>
 
 <section>
   <div class="wrap">
     <h2>Perguntas frequentes</h2>
+    <details><summary>Tem para iPhone?</summary><p>Tem, pela versão web: abra <a href="app/">mcardosor.github.io/candango/app</a> no Safari e adicione à Tela de Início. Não está na App Store, porque publicar lá custa US$ 99 por ano.</p></details>
     <details><summary>É de graça? Tem anúncio?</summary><p>É grátis, sem anúncios e sem cadastro. O código é aberto e qualquer pessoa pode conferir.</p></details>
     <details><summary>É um app oficial do GDF?</summary><p>Não. O Candango é um projeto independente que usa os dados abertos da SEMOB-DF. Ele não tem ligação com o GDF, com a SEMOB nem com as empresas de ônibus.</p></details>
     <details><summary>Os horários são exatos?</summary><p>Os horários de saída vêm da tabela oficial. A passagem em cada parada é estimada pela distância desde o terminal. Quando o ônibus está com o GPS ligado, aparece a previsão "ao vivo", que é a mais confiável.</p></details>

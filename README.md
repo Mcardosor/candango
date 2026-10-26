@@ -12,6 +12,9 @@ de agora até daqui a 3 horas e quanto falta para o seu chegar no ponto.
 <a href="https://github.com/Mcardosor/candango/releases/latest/download/candango.apk">
   <img src="https://img.shields.io/badge/📥%20Baixar%20o%20app-Android%20(APK)-0B8A5F?style=for-the-badge" alt="Baixar o app para Android" height="44" />
 </a>
+<a href="https://mcardosor.github.io/candango/app/">
+  <img src="https://img.shields.io/badge/🌐%20Abrir%20no%20navegador-iPhone%20e%20computador-066B49?style=for-the-badge" alt="Abrir a versão web (iPhone e computador)" height="44" />
+</a>
 
 [Página do app](https://mcardosor.github.io/candango/) · [Todas as versões](https://github.com/Mcardosor/candango/releases) · [Como instalar](#-como-instalar)
 
@@ -58,7 +61,7 @@ O Candango ainda não está na Play Store. A instalação é pelo arquivo APK:
 
 Para atualizar, é só baixar e instalar a versão nova por cima: seus dados não se perdem. Requer Android 8.0 ou mais recente.
 
-> **iPhone:** ainda não há versão para iOS.
+> **iPhone:** use a [versão web](https://mcardosor.github.io/candango/app/). Abra no Safari, toque em **Compartilhar** e depois em **Adicionar à Tela de Início**; o Candango fica com ícone de app. A mesma versão funciona no computador.
 
 ## 📡 De onde vêm os dados
 
@@ -95,7 +98,12 @@ app/src/main/java/io/github/mcardosor/candango/
 │   ├── MapController.kt
 │   └── Screens.kt
 └── MainActivity.kt
-tools/build-data.mjs  # baixa e empacota linhas, paradas, trajetos e horários (assets/dados.json)
+tools/build-data.mjs  # baixa e empacota linhas, paradas, trajetos e horários (assets/dados.json e docs/app/dados.json)
+docs/                 # página de download (GitHub Pages)
+└── app/              # versão web (PWA): JavaScript puro + MapLibre GL JS, sem etapa de build
+    ├── js/model.js, js/planner.js, js/live.js   # mesma lógica de data/ do Android
+    ├── js/map.js, js/app.js                     # mapa e telas
+    └── sw.js                                    # cache para abrir rápido e sem internet
 ```
 
 **Requisitos:** JDK 21 e Android SDK (compileSdk 37). Crie `local.properties` com `sdk.dir=...`, ou abra o projeto no Android Studio.
@@ -105,6 +113,8 @@ tools/build-data.mjs  # baixa e empacota linhas, paradas, trajetos e horários (
 ./gradlew testDebugUnitTest      # testes do planejador com os dados reais
 node tools/build-data.mjs        # atualiza linhas e horários da SEMOB (~30 s)
 ```
+
+**Versão web:** é servida direto de `docs/` pelo GitHub Pages; um push na `main` publica. Para testar localmente, sirva a pasta `docs/` com qualquer servidor estático e abra `/app/` (em `localhost`, `?geo=-15.7962,-47.8838` simula a sua localização e o service worker fica desligado). Ao mudar arquivos do app web, troque a versão em `CACHE` no `docs/app/sw.js`.
 
 **Publicar uma versão:** atualize `versionCode` e `versionName` em `app/build.gradle.kts` e crie uma tag `vX.Y.Z`. O GitHub Actions compila, assina e publica o APK em [Releases](https://github.com/Mcardosor/candango/releases).
 

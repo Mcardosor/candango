@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 
 const BASE = "https://www.sistemas.dftrans.df.gov.br/service";
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "app", "src", "main", "assets", "dados.json");
+// a versão web (docs/app, servida pelo GitHub Pages) usa o mesmo arquivo
+const WEB_OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "docs", "app", "dados.json");
 const STOP_MAX_DIST_M = 30;     // parada a até 30 m do trajeto = atendida pela linha
 const DEFAULT_SPEED_KMH = 20;   // usada quando a SEMOB não informa duração média
 const CONCURRENCY = 6;
@@ -231,6 +233,7 @@ const data = {
 };
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(data));
+writeFileSync(WEB_OUT, JSON.stringify(data));
 
 const withTimes = kept.filter((l) => l.dirs.some((d) => Object.keys(d.times).length)).length;
 const servedStops = new Set(kept.flatMap((l) => l.dirs.flatMap((d) => d.stops.map((s) => s[0])))).size;

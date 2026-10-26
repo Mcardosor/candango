@@ -1,0 +1,18 @@
+{
+  "name": "Candango · ônibus do DF em tempo real",
+  "short_name": "Candango",
+  "description": "Mapa ao vivo dos ônibus do DF, linhas até o seu destino e previsão de chegada.",
+  "lang": "pt-BR",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B8A5F",
+  "theme_color": "#0B8A5F",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
