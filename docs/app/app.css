@@ -114,6 +114,8 @@ small { font-size: 12px; }
 .btn:hover:not(:disabled) { background: var(--soft); }
 .btn.primary { background: var(--green); border-color: var(--green); color: #fff; margin-top: 12px; }
 .tip { margin-top: 12px !important; padding: 10px 12px; border-radius: 10px; background: #EEF6F2; font-size: 13px; }
+.tip.warn { background: #FFF4E5; }
+.link { color: var(--me); font-weight: 600; text-decoration: underline; display: inline; }
 .share { display: inline-block; transform: rotate(-90deg); }
 
 .item {

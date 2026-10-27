@@ -1,7 +1,7 @@
 // Service worker do Candango: guarda o app e os dados fixos para abrir rápido (e sem internet).
 // GPS dos ônibus, busca de endereços e mapa sempre vêm da rede.
 // Ao publicar mudanças, troque a versão para os celulares baixarem os arquivos novos.
-const CACHE = "candango-v0.3.2";
+const CACHE = "candango-v0.3.3";
 const SHELL = [
   "./", "index.html", "app.css", "manifest.webmanifest", "dados.json",
   "js/app.js", "js/model.js", "js/planner.js", "js/live.js", "js/map.js",

@@ -52,6 +52,8 @@ const S = {
   busesUpdatedAt: 0,
   liveError: null,
   myLocation: null,
+  myAccuracyM: null, // raio de erro informado pelo navegador; null quando marcado à mão
+  manualMe: false, // a pessoa marcou no mapa onde está
   locationDenied: false,
   origin: null, // {name, pos}
   dest: null,
@@ -267,17 +269,27 @@ document.addEventListener("visibilitychange", () => {
 
 function startLocation() {
   // para testes locais: localhost:4173/app/?geo=-15.7962,-47.8838 simula a posição
+  // (um terceiro número simula a margem de erro em metros: ?geo=-15.79,-47.88,3000)
   const fake = location.hostname === "localhost" && new URLSearchParams(location.search).get("geo");
   if (fake) {
-    const [lat, lon] = fake.split(",").map(Number);
+    const [lat, lon, acc] = fake.split(",").map(Number);
     S.myLocation = { lat, lon };
+    S.myAccuracyM = acc || null;
     return;
   }
+  try {
+    const saved = JSON.parse(localStorage.getItem(MANUAL_ME_KEY));
+    if (saved?.lat) { S.myLocation = saved; S.manualMe = true; }
+  } catch {}
   if (!("geolocation" in navigator)) return;
   navigator.geolocation.watchPosition(
     (p) => {
+      // posição marcada à mão só perde para um GPS de verdade
+      if (S.manualMe && p.coords.accuracy > GOOD_ACCURACY_M) return;
       const first = !S.myLocation;
+      if (S.manualMe) forgetManualMe();
       S.myLocation = { lat: p.coords.latitude, lon: p.coords.longitude };
+      S.myAccuracyM = p.coords.accuracy;
       S.locationDenied = false;
       if (first && !S.origin && S.dest) replan();
       renderAll();
@@ -288,6 +300,29 @@ function startLocation() {
     { enableHighAccuracy: true, maximumAge: 10_000, timeout: 30_000 },
   );
 }
+
+// No computador não há GPS: o navegador estima a posição pela internet e pode errar por quilômetros.
+const MANUAL_ME_KEY = "candango.minhaPosicao";
+const GOOD_ACCURACY_M = 100;
+const POOR_ACCURACY_M = 300;
+const locationIsPoor = () => !S.manualMe && S.myAccuracyM > POOR_ACCURACY_M;
+
+function setManualMe(pos) {
+  S.myLocation = pos;
+  S.myAccuracyM = null;
+  S.manualMe = true;
+  try { localStorage.setItem(MANUAL_ME_KEY, JSON.stringify(pos)); } catch {}
+  closeOverlays();
+  if (!S.origin && S.dest) replan();
+  renderAll();
+}
+
+function forgetManualMe() {
+  S.manualMe = false;
+  try { localStorage.removeItem(MANUAL_ME_KEY); } catch {}
+}
+
+const fmtDist = (m) => (m >= 1000 ? `${(m / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km` : `${Math.round(m)} m`);
 
 // ---------- mapa ----------
 
@@ -372,6 +407,7 @@ function renderMap() {
 }
 
 function onMapClick(latlon, hit) {
+  if (S.pickOnMapFor === "me") { setManualMe(latlon); return; }
   if (S.pickOnMapFor) {
     setEndpoint(S.pickOnMapFor, { name: "Ponto no mapa", pos: latlon });
     return;
@@ -421,7 +457,9 @@ function renderTop() {
     html = `<div class="card titlebar"><button class="icon-btn" data-act="back">${icon("back", "", "Voltar")}</button><b>${esc(title)}</b></div>`;
   }
   if (S.pickOnMapFor) {
-    html += banner(`Toque no mapa para escolher o ${S.pickOnMapFor === "origin" ? "ponto de partida" : "destino"}`, true);
+    html += banner(S.pickOnMapFor === "me"
+      ? "Toque no mapa onde você está"
+      : `Toque no mapa para escolher o ${S.pickOnMapFor === "origin" ? "ponto de partida" : "destino"}`, true);
   }
   if (S.liveError) html += banner(S.liveError, false);
   top.innerHTML = html;
@@ -481,6 +519,10 @@ function homeContent() {
       <button class="btn" data-act="nearest" ${S.myLocation ? "" : "disabled"}>${icon("myloc")}Parada mais próxima</button>
     </div>
     ${S.locationDenied ? `<p class="tip">Sem acesso à sua localização. Para ver as paradas perto de você, permita a localização para este site nas configurações do navegador.</p>` : ""}
+    ${locationIsPoor() ? `<p class="tip warn">📍 Sua localização pode estar errada (margem de ~${fmtDist(S.myAccuracyM)}). No computador ela é estimada pela internet, sem GPS.
+      <button class="link" data-act="pick-me">Marcar onde estou</button></p>` : ""}
+    ${S.manualMe ? `<p class="small muted">📍 Localização marcada no mapa · <button class="link" data-act="pick-me">mudar</button></p>` : ""}
+    ${S.locationDenied || locationIsPoor() || S.manualMe ? "" : `<p class="small muted"><button class="link" data-act="pick-me">Localização errada? Marque no mapa</button></p>`}
     ${install}
   </div>`;
 }
@@ -683,6 +725,7 @@ document.addEventListener("click", (e) => {
     case "hit": onSearchHit(S.search.hits[+b.dataset.i]); break;
     case "hit-me": setEndpoint(S.search.field, { name: "Minha localização", pos: S.myLocation, isMe: true }); break;
     case "pick": startPick(S.search.field); break;
+    case "pick-me": startPick("me"); break;
     case "close-search": goBack(); break;
     case "me": mapView.center(S.myLocation, 16, mapPadding()); break;
     case "install": S.installPrompt?.prompt(); S.installPrompt = null; renderAll(); break;
