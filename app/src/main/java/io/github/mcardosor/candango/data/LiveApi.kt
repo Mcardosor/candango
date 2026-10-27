@@ -29,7 +29,7 @@ data class Place(val name: String, val detail: String, val pos: LatLon)
 object LiveApi {
     private const val GPS_URL = "https://www.sistemas.dftrans.df.gov.br/service/gps/operacoes"
     private const val PHOTON_URL = "https://photon.komoot.io/api/"
-    private const val USER_AGENT = "Candango/0.2 (+https://github.com/Mcardosor/candango)"
+    private const val USER_AGENT = "Candango/0.3 (+https://github.com/Mcardosor/candango)"
 
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 

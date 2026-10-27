@@ -31,9 +31,14 @@ class MainActivity : ComponentActivity() {
         startLocation()
     }
 
+    private var started = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
+        Notifier.createChannels(this)
+        // fim da viagem/aviso com o app fechado: desliga o que ficou ligado só por causa dele
+        vm.onBackgroundWorkEnded = { if (!started) stopLive() }
         enableEdgeToEdge()
         setContent {
             MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF0B8A5F), secondary = Color(0xFF0B8A5F))) {
@@ -47,12 +52,24 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        started = true
         vm.startPolling()
         startLocation()
     }
 
     override fun onStop() {
         super.onStop()
+        started = false
+        // com viagem ou aviso ligado, o TripService mantém o app vivo e o GPS continua
+        if (!vm.backgroundWork) stopLive()
+    }
+
+    override fun onDestroy() {
+        vm.onBackgroundWorkEnded = null
+        super.onDestroy()
+    }
+
+    private fun stopLive() {
         vm.stopPolling()
         locationManager.removeUpdates(locationListener)
     }
@@ -69,6 +86,7 @@ class MainActivity : ComponentActivity() {
         providers.mapNotNull { locationManager.getLastKnownLocation(it) }
             .maxByOrNull { it.time }
             ?.let { vm.onLocation(LatLon(it.latitude, it.longitude)) }
-        for (p in providers) locationManager.requestLocationUpdates(p, 10_000L, 15f, locationListener)
+        // a cada 5 s / 10 m: dentro do ônibus o "desça na próxima" precisa de posição recente
+        for (p in providers) locationManager.requestLocationUpdates(p, 5_000L, 10f, locationListener)
     }
 }

@@ -1,9 +1,20 @@
 package io.github.mcardosor.candango.ui
 
+import android.Manifest
 import android.app.TimePickerDialog
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,13 +43,24 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsBus
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TripOrigin
+import androidx.compose.material.icons.filled.Work
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -51,7 +73,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +83,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -69,6 +94,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,6 +103,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.github.mcardosor.candango.Notifier
 import io.github.mcardosor.candango.data.Geo
 import io.github.mcardosor.candango.data.LatLon
 import io.github.mcardosor.candango.data.Line
@@ -96,6 +123,7 @@ private val Green = Color(0xFF0B8A5F)
 private val LiveGreen = Color(0xFF00A86B)
 private val Muted = Color(0xFF6B7280)
 private val MeBlue = Color(0xFF1E88E5) // mesmo azul do marcador "você" no mapa
+private val Star = Color(0xFFF59E0B)
 
 fun hex(c: String): Color = Color(android.graphics.Color.parseColor(c))
 
@@ -114,12 +142,28 @@ fun AppRoot(vm: AppViewModel) {
 
     BackHandler(enabled = vm.canGoBack || vm.searchFor != null || vm.searchLinesOnly || vm.pickOnMapFor != null) { vm.back() }
 
+    // permissão de notificação (Android 13+), pedida na hora em que a pessoa liga um aviso ou inicia uma viagem
+    val ctx = LocalContext.current
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val askNotifications: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= 33 && !Notifier.canNotify(ctx)) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    // tela acesa durante a viagem
+    val view = LocalView.current
+    val tripActive = vm.trip != null
+    DisposableEffect(tripActive) {
+        view.keepScreenOn = tripActive
+        onDispose { view.keepScreenOn = false }
+    }
+
+    CompositionLocalProvider(LocalAskNotifications provides askNotifications) {
     Box(Modifier.fillMaxSize()) {
         MapHost(vm) { controller = it }
 
         // Atualiza o conteúdo do mapa sempre que algo relevante muda
         val c = controller
-        LaunchedEffect(c, vm.screen, vm.buses, vm.origin, vm.dest, vm.myLocation, vm.loaded) {
+        LaunchedEffect(c, vm.screen, vm.buses, vm.origin, vm.dest, vm.myLocation, vm.loaded, vm.trip?.option) {
             if (c != null && vm.loaded) renderMap(c, vm)
         }
         // Enquadra o mapa só quando o "assunto" da tela muda
@@ -137,7 +181,23 @@ fun AppRoot(vm: AppViewModel) {
             }
             vm.pickOnMapFor?.let { f ->
                 Spacer(Modifier.height(8.dp))
-                Banner("Toque no mapa para escolher o ${if (f == Field.ORIGIN) "ponto de partida" else "destino"}") { vm.back() }
+                Banner(
+                    when (f) {
+                        Field.ORIGIN -> "Toque no mapa para escolher o ponto de partida"
+                        Field.DEST -> "Toque no mapa para escolher o destino"
+                        Field.HOME -> "Toque no mapa para marcar sua casa"
+                        Field.WORK -> "Toque no mapa para marcar seu trabalho"
+                    },
+                ) { vm.back() }
+            }
+            ToastBanner(vm)
+            vm.alerts.forEach { a ->
+                Spacer(Modifier.height(8.dp))
+                val live = Planner.liveEta(a.dir, a.along, vm.buses)
+                Banner(
+                    "🔔 Aviso: ${a.dir.line.numero} na ${a.stop.label} · " + (live?.let { "ônibus a ${it.minutes} min" } ?: "esperando um ônibus com GPS"),
+                    color = Color(0xFF5B4300),
+                ) { vm.cancelAlert(a) }
             }
             vm.liveError?.let {
                 Spacer(Modifier.height(8.dp))
@@ -171,6 +231,21 @@ fun AppRoot(vm: AppViewModel) {
             }
         }
     }
+    }
+}
+
+/** Pede a permissão de notificação; chamado antes de ligar um aviso ou iniciar uma viagem. */
+private val LocalAskNotifications = staticCompositionLocalOf<() -> Unit> { {} }
+
+/** Último aviso disparado ("ônibus chegando", "desça na próxima"), por até 2 min. */
+@Composable
+private fun ToastBanner(vm: AppViewModel) {
+    val t = vm.toast ?: return
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(t) { while (true) { delay(5_000); now = System.currentTimeMillis() } }
+    if (now - t.at > AppViewModel.TOAST_MS) return
+    Spacer(Modifier.height(8.dp))
+    Banner("${t.title}\n${t.body}", color = Green) { vm.toast = null }
 }
 
 // =====================================================================================
@@ -233,6 +308,7 @@ private fun MapHost(vm: AppViewModel, onReady: (MapController) -> Unit) {
 
 private fun fitKey(vm: AppViewModel): Any = when (val s = vm.screen) {
     is Screen.Route -> "rota" to s.option.key
+    Screen.Trip -> vm.trip.let { Triple("viagem", it?.legIdx, it?.phase) }
     is Screen.LineView -> s.line to s.dirIndex
     is Screen.StopView -> s.stop
     else -> Triple("plano", vm.effectiveOrigin?.pos, vm.dest?.pos)
@@ -241,6 +317,15 @@ private fun fitKey(vm: AppViewModel): Any = when (val s = vm.screen) {
 private fun fitPoints(vm: AppViewModel): List<LatLon> = when (val s = vm.screen) {
     is Screen.Route -> listOfNotNull(vm.effectiveOrigin?.pos, vm.dest?.pos) +
         s.option.legs.flatMap { it.dir.shapeBetween(it.boardAlong, it.alightAlong) }
+    // na viagem: a pessoa e o próximo ponto que importa
+    Screen.Trip -> vm.trip?.let { t ->
+        val target = when (t.phase) {
+            TripPhase.RIDE -> t.leg.alightStop.pos
+            TripPhase.WALK_END, TripPhase.DONE -> t.dest?.pos
+            else -> t.leg.boardStop.pos
+        }
+        listOfNotNull(vm.myLocation, target)
+    } ?: emptyList()
     is Screen.LineView -> s.line.dirs.getOrNull(s.dirIndex)?.shape ?: emptyList()
     is Screen.StopView -> listOfNotNull(s.stop.pos, walkableMe(vm, s.stop.pos))
     else -> listOfNotNull(vm.effectiveOrigin?.pos, vm.dest?.pos)
@@ -260,9 +345,11 @@ private fun renderMap(c: MapController, vm: AppViewModel) {
     }
     fun allBuses() = vm.buses.map { MapBus(it, AppViewModel.colorFor(it.linha), false) }
 
-    when (val s = vm.screen) {
-        is Screen.Route -> {
-            val o = s.option
+    val s = vm.screen
+    val routeOption = (s as? Screen.Route)?.option ?: vm.trip?.takeIf { s == Screen.Trip }?.option
+    when {
+        routeOption != null -> {
+            val o = routeOption
             val walk = "#455A64"
             val lines = ArrayList<MapLine>()
             vm.effectiveOrigin?.let { lines += MapLine(listOf(it.pos, o.first.boardStop.pos), walk, dashed = true) }
@@ -282,7 +369,7 @@ private fun renderMap(c: MapController, vm: AppViewModel) {
             })
             c.setMarkers(markers)
         }
-        is Screen.LineView -> {
+        s is Screen.LineView -> {
             val dir = s.line.dirs.getOrNull(s.dirIndex)
             val color = AppViewModel.colorFor(s.line.numero)
             c.setLines(listOfNotNull(dir?.let { MapLine(it.shape, color) }))
@@ -290,7 +377,7 @@ private fun renderMap(c: MapController, vm: AppViewModel) {
             c.setBuses(vm.liveBusesOf(s.line).map { MapBus(it, color, true) })
             c.setMarkers(markers)
         }
-        is Screen.StopView -> {
+        s is Screen.StopView -> {
             c.setLines(listOfNotNull(walkableMe(vm, s.stop.pos)?.let { MapLine(listOf(it, s.stop.pos), "#1E88E5", dashed = true) }))
             c.setStops(listOf(s.stop), "#0B8A5F")
             c.setBuses(allBuses())
@@ -379,23 +466,27 @@ private fun EndpointRow(icon: ImageVector, tint: Color, text: String, placeholde
 
 @Composable
 private fun TitleBar(vm: AppViewModel) {
+    val isTrip = vm.screen == Screen.Trip
     val title = when (val s = vm.screen) {
         is Screen.Route -> s.option.legs.joinToString(" + ") { it.dir.line.numero }.let { if (s.option.isDirect) "Linha $it" else "Linhas $it" }
+        Screen.Trip -> "Viagem · " + (vm.trip?.option?.legs?.joinToString(" + ") { it.dir.line.numero } ?: "")
         is Screen.LineView -> "Linha ${s.line.numero}"
         is Screen.StopView -> s.stop.label
         else -> ""
     }
     Surface(shape = RoundedCornerShape(16.dp), shadowElevation = 6.dp, color = Color.White) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Voltar") }
+            IconButton(onClick = { vm.back() }) {
+                if (isTrip) Icon(Icons.Default.Close, "Encerrar viagem") else Icon(Icons.AutoMirrored.Filled.ArrowBack, "Voltar")
+            }
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
-private fun Banner(text: String, onClose: (() -> Unit)?) {
-    Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFF263238)) {
+private fun Banner(text: String, color: Color = Color(0xFF263238), onClose: (() -> Unit)?) {
+    Surface(shape = RoundedCornerShape(12.dp), color = color) {
         Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(text, color = Color.White, modifier = Modifier.weight(1f).padding(vertical = 8.dp), fontSize = 14.sp)
             if (onClose != null) IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Cancelar", tint = Color.White) }
@@ -425,6 +516,7 @@ private fun BottomPanel(vm: AppViewModel, modifier: Modifier) {
                 is Screen.Route -> RouteContent(vm, s.option)
                 is Screen.LineView -> LineContent(vm, s.line, s.dirIndex)
                 is Screen.StopView -> StopContent(vm, s.stop)
+                Screen.Trip -> vm.trip?.let { TripContent(vm, it) }
             }
         }
     }
@@ -448,15 +540,19 @@ private fun LiveStatus(vm: AppViewModel) {
 
 @Composable
 private fun HomeContent(vm: AppViewModel) {
-    Column(Modifier.padding(16.dp)) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
         LiveStatus(vm)
         Spacer(Modifier.height(12.dp))
-        Text("Para onde vamos?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text(
-            "Escolha um destino para ver as linhas que levam até lá agora e nas próximas 3 horas. " +
-                "Dica: toque e segure no mapa para marcar o destino.",
-            color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp),
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FavPlaceCard(vm, Field.HOME, Icons.Default.Home, Modifier.weight(1f))
+            FavPlaceCard(vm, Field.WORK, Icons.Default.Work, Modifier.weight(1f))
+        }
+        val favLines = vm.favs.lines.filter { Repo.lineByNumero.containsKey(it) }
+        if (favLines.isNotEmpty()) {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                favLines.forEach { n -> Box(Modifier.clickable { Repo.lineByNumero[n]?.let { vm.openLine(it) } }) { LineBadge(n) } }
+            }
+        }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { vm.openSearch(null) }) {
@@ -466,6 +562,71 @@ private fun HomeContent(vm: AppViewModel) {
                 Icon(Icons.Default.MyLocation, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Parada mais próxima")
             }
         }
+        NearbyList(vm)
+        if (vm.myLocation == null) {
+            Text("Dica: toque e segure no mapa para marcar o destino.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
+        }
+    }
+}
+
+/** Atalho para Casa ou Trabalho: um toque planeja a rota; vazio, abre a busca para definir. */
+@Composable
+private fun FavPlaceCard(vm: AppViewModel, field: Field, icon: ImageVector, modifier: Modifier) {
+    val p = vm.favs.place(field.favKey!!)
+    Row(
+        modifier.clip(RoundedCornerShape(12.dp))
+            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+            .clickable { vm.goToFavorite(field) }
+            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = Green, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(field.label, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Text(p?.name ?: "Toque para definir", fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (p != null) {
+            IconButton(onClick = { vm.openSearch(field) }, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Edit, "Mudar ${field.label}", tint = Muted, modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+/** "Perto de você": próximas linhas nas paradas ao redor, já contando a caminhada. */
+@Composable
+private fun NearbyList(vm: AppViewModel) {
+    if (vm.myLocation == null || !vm.loaded) return
+    val rows = vm.nearbyRows()
+    val nowMin = ZonedDateTime.now(Time.ZONE).let { it.hour * 60 + it.minute }
+    Text("Perto de você", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
+    if (rows.isEmpty()) {
+        Text("Nenhuma linha passando a até 500 m nos próximos 90 minutos.", fontSize = 13.sp, color = Muted)
+        return
+    }
+    rows.forEach { r ->
+        Row(
+            Modifier.fillMaxWidth().clickable { vm.openStop(r.stop) }.padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LineBadge(r.dir.line.numero)
+            if (vm.favs.hasLine(r.dir.line.numero)) Icon(Icons.Default.Star, null, tint = Star, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(r.dir.line.descricao, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${r.stop.label} · ${r.distM} m · ${r.dir.label}", fontSize = 12.sp, color = Muted, maxLines = 1)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                val live = r.live
+                if (live != null) LiveMinutes(live)
+                else {
+                    Text(Time.wait(r.atMin - nowMin), fontWeight = FontWeight.Bold)
+                    Text(Time.fmt(r.atMin), fontSize = 12.sp, color = Muted)
+                }
+            }
+        }
+        HorizontalDivider(color = Color(0xFFF1F5F9))
     }
 }
 
@@ -607,6 +768,24 @@ private fun RouteContent(vm: AppViewModel, o: PlanOption) {
                 }
                 o.live?.let { Column(horizontalAlignment = Alignment.End) { LiveMinutes(it) } }
             }
+            val ask = LocalAskNotifications.current
+            val alertOn = vm.hasAlert(o.first.dir, o.first.boardStop)
+            Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { ask(); vm.startTrip(o) }, colors = ButtonDefaults.buttonColors(containerColor = Green)) {
+                    Icon(Icons.Default.Navigation, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Iniciar viagem")
+                }
+                OutlinedButton(onClick = {
+                    if (!alertOn) ask()
+                    vm.toggleAlert(o.first.dir, o.first.boardAlong, o.first.boardStop)
+                }) {
+                    Icon(
+                        if (alertOn) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, null,
+                        tint = if (alertOn) Star else Color(0xFF374151), modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (alertOn) "Aviso ligado" else "Avisar a ${AppViewModel.ALERT_MIN} min")
+                }
+            }
         }
         item { Step(Icons.AutoMirrored.Filled.DirectionsWalk, "Caminhe até a ${o.first.boardStop.label}", "${o.walkToM} m · ${o.walkToMin} min") }
         o.legs.forEachIndexed { i, leg ->
@@ -645,6 +824,100 @@ private fun RouteContent(vm: AppViewModel, o: PlanOption) {
             Text(
                 "Horários calculados a partir da tabela da SEMOB e da distância do terminal até o ponto.",
                 fontSize = 11.sp, color = Muted, modifier = Modifier.padding(vertical = 12.dp),
+            )
+        }
+    }
+}
+
+/** Viagem em andamento: a etapa atual em destaque e o botão manual da etapa. */
+@Composable
+private fun TripContent(vm: AppViewModel, t: TripState) {
+    val leg = t.leg
+    val num = leg.dir.line.numero
+    val me = vm.myLocation
+    val nowMin = ZonedDateTime.now(Time.ZONE).let { it.hour * 60 + it.minute }
+    val (big, sub) = vm.tripHeadline(t)
+    val urgent = t.phase == TripPhase.RIDE && big.startsWith("Desça")
+
+    @Composable
+    fun walkInfo(p: LatLon?) {
+        if (p == null) return
+        val text = if (me == null) "Sem sua localização" else Planner.walkM(Geo.dist(me, p)).let { m ->
+            "Faltam ${if (m < 1000) "$m m" else "%.1f km".format(Locale("pt", "BR"), m / 1000.0)} · ${Planner.walkMinutes(m).coerceAtLeast(1)} min a pé"
+        }
+        Text(text, fontSize = 13.sp, color = MeBlue, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+    }
+
+    // quando o ônibus chega ao ponto: ao vivo ou pela tabela
+    @Composable
+    fun busInfo() {
+        val live = Planner.liveEta(leg.dir, leg.boardAlong, vm.buses)
+        if (live != null) {
+            Text(
+                "Ônibus ao vivo a ${if (live.minutes <= 1) "menos de 1 min" else "${live.minutes} min"} do ponto",
+                color = LiveGreen, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp),
+            )
+        } else {
+            val next = vm.stopDepartures(leg.boardStop).firstOrNull { it.first === leg.dir }?.second?.firstOrNull()
+            Text(
+                "Nenhum ônibus da $num com GPS vindo agora" +
+                    (next?.let { " · previsto às ${Time.fmt(it)} (${if (it - nowMin <= 0) "agora" else Time.wait(it - nowMin)})" } ?: ""),
+                color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+    }
+
+    // o painel pisca em vermelho na hora de descer
+    val pulse = rememberInfiniteTransition(label = "desca")
+    val urgentBg by pulse.animateColor(Color(0xFFFDE8E8), Color(0xFFFBD0D0), infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "fundo")
+
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            t.option.legs.forEachIndexed { i, l ->
+                if (i > 0) Text("  ›  ", color = Muted)
+                Box(Modifier.alpha(if (i < t.legIdx) 0.35f else 1f)) { LineBadge(l.dir.line.numero) }
+            }
+        }
+        Column(
+            Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                .background(if (urgent) urgentBg else Color(0xFFEEF6F2)).padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            Text(big, fontSize = 23.sp, fontWeight = FontWeight.Bold, color = if (urgent) Color(0xFFB91C1C) else Color(0xFF111827))
+            Text(sub, color = Muted, fontSize = 14.sp)
+        }
+        when (t.phase) {
+            TripPhase.WALK -> { walkInfo(leg.boardStop.pos); busInfo() }
+            TripPhase.WAIT -> busInfo()
+            TripPhase.RIDE -> {
+                val (along, byGps) = vm.rideAlong(t)
+                val ahead = vm.stopsAhead(leg, along)
+                if (ahead.size > 1) Text("Próxima parada: ${ahead.first().label}", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 8.dp))
+                if (!byGps) Text(
+                    "Sem o seu GPS no trajeto: contagem estimada pelo tempo. Confira as paradas pela janela.",
+                    fontSize = 12.sp, color = Muted, modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            TripPhase.WALK_END -> walkInfo(t.dest?.pos)
+            TripPhase.DONE -> {}
+        }
+        Spacer(Modifier.height(12.dp))
+        if (t.phase == TripPhase.DONE) {
+            Button(onClick = { vm.back() }, colors = ButtonDefaults.buttonColors(containerColor = Green)) { Text("Encerrar viagem") }
+        } else {
+            Button(onClick = { vm.tripNext() }, colors = ButtonDefaults.buttonColors(containerColor = Green)) {
+                Text(
+                    when (t.phase) {
+                        TripPhase.WALK -> "Cheguei na parada"
+                        TripPhase.WAIT -> "Entrei no ônibus"
+                        TripPhase.RIDE -> "Desci do ônibus"
+                        else -> "Cheguei"
+                    },
+                )
+            }
+            Text(
+                "O app avança sozinho pelo GPS e avisa quando o ônibus estiver chegando e quando for a hora de descer, " +
+                    "mesmo com a tela apagada.",
+                fontSize = 11.sp, color = Muted, modifier = Modifier.padding(top = 10.dp),
             )
         }
     }
@@ -730,6 +1003,13 @@ private fun LineContent(vm: AppViewModel, line: Line, dirIndex: Int) {
                     Text(line.descricao, fontWeight = FontWeight.SemiBold, maxLines = 2)
                     line.tarifa?.let { Text("Tarifa R$ %.2f".format(Locale("pt", "BR"), it), fontSize = 12.sp, color = Muted) }
                 }
+                val fav = vm.favs.hasLine(line.numero)
+                IconButton(onClick = { vm.favs.toggleLine(line.numero) }) {
+                    Icon(
+                        if (fav) Icons.Default.Star else Icons.Default.StarBorder,
+                        if (fav) "Tirar dos favoritos" else "Favoritar linha", tint = Star,
+                    )
+                }
             }
             if (line.dirs.size > 1) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -783,6 +1063,7 @@ private fun StopContent(vm: AppViewModel, stop: io.github.mcardosor.candango.dat
             OutlinedButton(onClick = { vm.setEndpoint(Field.DEST, Endpoint(stop.label, stop.pos)) }) { Text("Ir para cá") }
         }
         if (rows.isEmpty()) Hint("Nenhuma passagem prevista nas próximas 3 horas.")
+        val ask = LocalAskNotifications.current
         LazyColumn {
             items(rows, key = { it.first.line.numero + it.first.sentido }) { (dir, passes, live) ->
                 Row(
@@ -801,6 +1082,18 @@ private fun StopContent(vm: AppViewModel, stop: io.github.mcardosor.candango.dat
                     Column(horizontalAlignment = Alignment.End) {
                         if (live != null) LiveMinutes(live)
                         else passes.firstOrNull()?.let { Text(Time.wait(it - nowMin), fontWeight = FontWeight.Bold) }
+                    }
+                    val on = vm.hasAlert(dir, stop)
+                    IconButton(onClick = {
+                        if (!on) ask()
+                        val along = Repo.dirsAtStop[stop.idx].first { it.first === dir }.second
+                        vm.toggleAlert(dir, along, stop)
+                    }) {
+                        Icon(
+                            if (on) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone,
+                            if (on) "Cancelar aviso" else "Avisar quando estiver a ${AppViewModel.ALERT_MIN} min",
+                            tint = if (on) Star else Muted,
+                        )
                     }
                 }
                 HorizontalDivider(color = Color(0xFFF1F5F9))
@@ -830,6 +1123,8 @@ private fun SearchOverlay(vm: AppViewModel) {
                             when (vm.searchFor) {
                                 Field.ORIGIN -> "De onde você sai?"
                                 Field.DEST -> "Endereço, lugar ou parada"
+                                Field.HOME -> "Endereço de casa"
+                                Field.WORK -> "Endereço do trabalho"
                                 null -> "Número ou nome da linha"
                             },
                         )
@@ -849,10 +1144,25 @@ private fun SearchOverlay(vm: AppViewModel) {
                 if (field != null) {
                     if (vm.myLocation != null) item {
                         SearchRow(Icons.Default.MyLocation, "Minha localização", "") {
-                            vm.setEndpoint(field, Endpoint("Minha localização", vm.myLocation!!, isMyLocation = true))
+                            vm.choose(field, Endpoint("Minha localização", vm.myLocation!!, isMyLocation = true))
                         }
                     }
                     item { SearchRow(Icons.Default.Map, "Escolher no mapa", "") { vm.startPick(field) } }
+                    val key = field.favKey
+                    if (key != null && vm.favs.place(key) != null) item {
+                        SearchRow(Icons.Default.Close, "Remover ${field.label}", "") { vm.removeFavorite(field) }
+                    }
+                    if (vm.searchQuery.isBlank()) {
+                        if (key == null) {
+                            for ((f, ic) in listOf(Field.HOME to Icons.Default.Home, Field.WORK to Icons.Default.Work)) {
+                                val p = vm.favs.place(f.favKey!!) ?: continue
+                                item { SearchRow(ic, f.label, p.name) { vm.choose(field, Endpoint(f.label, p.pos, isFavorite = true)) } }
+                            }
+                        }
+                        items(vm.favs.recents) { r ->
+                            SearchRow(Icons.Default.History, r.name, "Recente") { vm.choose(field, Endpoint(r.name, r.pos)) }
+                        }
+                    }
                 }
                 items(vm.searchHits) { hit ->
                     when (hit) {

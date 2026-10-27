@@ -10,6 +10,7 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.expressions.Expression.get
 import org.maplibre.android.style.expressions.Expression.literal
 import org.maplibre.android.style.expressions.Expression.toColor
@@ -21,12 +22,19 @@ import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
+import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
+import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
+import org.maplibre.android.style.layers.PropertyFactory.iconImage
+import org.maplibre.android.style.layers.PropertyFactory.iconRotate
+import org.maplibre.android.style.layers.PropertyFactory.iconRotationAlignment
+import org.maplibre.android.style.layers.PropertyFactory.iconSize
 import org.maplibre.android.style.layers.PropertyFactory.lineCap
 import org.maplibre.android.style.layers.PropertyFactory.lineColor
 import org.maplibre.android.style.layers.PropertyFactory.lineDasharray
 import org.maplibre.android.style.layers.PropertyFactory.lineJoin
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.PropertyFactory.textAllowOverlap
+import org.maplibre.android.style.layers.PropertyFactory.textAnchor
 import org.maplibre.android.style.layers.PropertyFactory.textColor
 import org.maplibre.android.style.layers.PropertyFactory.textField
 import org.maplibre.android.style.layers.PropertyFactory.textFont
@@ -95,15 +103,29 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
             circleRadius(5f), circleColor("#FFFFFF"), circleStrokeColor(toColor(get("color"))), circleStrokeWidth(2.5f),
         ))
 
-        style.addLayer(CircleLayer("onibus-camada", "onibus").withProperties(
-            circleRadius(org.maplibre.android.style.expressions.Expression.switchCase(get("highlight"), literal(11f), literal(7f))),
-            circleColor(toColor(get("color"))), circleStrokeColor("#FFFFFF"), circleStrokeWidth(2f),
+        // ônibus: bolinha na cor da linha com uma ponta apontando para onde ele vai (gira com o rumo do GPS),
+        // o desenho de um ônibus por cima e o número da linha ao lado
+        BusIcons.addTo(style, AppViewModel.ALL_COLORS)
+        val busSize = Expression.interpolate(
+            Expression.linear(), Expression.zoom(),
+            Expression.stop(10, Expression.switchCase(get("highlight"), literal(0.55f), literal(0.4f))),
+            Expression.stop(13, Expression.switchCase(get("highlight"), literal(0.85f), literal(0.65f))),
+            Expression.stop(15, Expression.switchCase(get("highlight"), literal(1.05f), literal(0.85f))),
+        )
+        style.addLayer(SymbolLayer("onibus-camada", "onibus").withProperties(
+            iconImage(Expression.concat(Expression.switchCase(get("arrow"), literal("seta:"), literal("bola:")), get("color"))),
+            iconRotate(get("heading")), iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+            iconSize(busSize), iconAllowOverlap(true), iconIgnorePlacement(true),
         ))
+        style.addLayer(SymbolLayer("onibus-glifo", "onibus").withProperties(
+            iconImage(BusIcons.GLYPH), iconSize(busSize), iconAllowOverlap(true), iconIgnorePlacement(true),
+        ).apply { minZoom = 11.5f })
         style.addLayer(SymbolLayer("onibus-rotulo", "onibus").withProperties(
-            textField(get("label")), textFont(arrayOf(FONT)), textSize(11f), textColor("#1B1B1F"),
-            textHaloColor("#FFFFFF"), textHaloWidth(1.5f), textOffset(arrayOf(0f, 1.5f)),
+            textField(get("label")), textFont(arrayOf(FONT)), textSize(12f), textColor("#FFFFFF"),
+            textHaloColor(toColor(get("color"))), textHaloWidth(3f),
+            textAnchor(Property.TEXT_ANCHOR_LEFT), textOffset(arrayOf(1.2f, 0f)),
             textAllowOverlap(false), textIgnorePlacement(false),
-        ).apply { minZoom = 12.5f })
+        ).apply { minZoom = 13f })
 
         style.addLayer(CircleLayer("marcadores-camada", "marcadores").withProperties(
             circleRadius(8f),
@@ -162,10 +184,14 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
     fun setBuses(buses: List<MapBus>) {
         busesSrc.setGeoJson(FeatureCollection.fromFeatures(buses.map { b ->
             Feature.fromGeometry(Point.fromLngLat(b.bus.pos.lon, b.bus.pos.lat)).apply {
+                val h = b.bus.heading
                 addStringProperty("color", b.color)
                 addStringProperty("label", b.bus.linha ?: "")
                 addStringProperty("linha", b.bus.linha ?: "")
                 addBooleanProperty("highlight", b.highlight)
+                addNumberProperty("heading", h ?: 0.0)
+                // rumo 0 com o ônibus parado costuma ser "sem rumo": vira bolinha sem seta
+                addBooleanProperty("arrow", h != null && !(h == 0.0 && (b.bus.speedKmh ?: 0.0) == 0.0))
             }
         }))
     }
