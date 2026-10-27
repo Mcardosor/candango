@@ -1,17 +1,21 @@
-Copyright (c) 2026 Matheus Cardoso Rodrigues. Todos os direitos reservados.
+MIT License
 
-Este software, incluindo o código-fonte, os dados processados, o design e a
-documentação, é de propriedade exclusiva do autor.
+Copyright (c) 2026 Matheus Cardoso Rodrigues
 
-Sem autorização prévia e por escrito do autor, não é permitido copiar,
-modificar, distribuir, publicar, sublicenciar, vender ou usar comercialmente
-este software, no todo ou em parte.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-O uso pessoal do aplicativo Candango, na forma distribuída pelo autor, é
-permitido.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-As versões publicadas até 27/10/2026 sob a licença MIT continuam regidas por
-aquela licença.
-
-O SOFTWARE É FORNECIDO "NO ESTADO EM QUE SE ENCONTRA", SEM GARANTIA DE
-NENHUM TIPO.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
