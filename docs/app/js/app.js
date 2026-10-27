@@ -34,6 +34,12 @@ const ICON = {
   close: "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
   search: "M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z",
   live: "M7.76 16.24C6.67 15.16 6 13.66 6 12s.67-3.16 1.76-4.24l1.42 1.42C8.45 9.9 8 10.9 8 12c0 1.1.45 2.1 1.17 2.83l-1.41 1.41zm8.48 0C17.33 15.16 18 13.66 18 12s-.67-3.16-1.76-4.24l-1.42 1.42C15.55 9.9 16 10.9 16 12c0 1.1-.45 2.1-1.17 2.83l1.41 1.41zM12 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm8 2c0 2.21-.9 4.21-2.35 5.65l1.42 1.42C20.88 17.26 22 14.76 22 12s-1.12-5.26-2.93-7.07l-1.42 1.42A7.94 7.94 0 0 1 20 12zM6.35 6.35 4.93 4.93C3.12 6.74 2 9.24 2 12s1.12 5.26 2.93 7.07l1.42-1.42C4.9 16.21 4 14.21 4 12s.9-4.21 2.35-5.65z",
+  home: "M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z",
+  work: "M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z",
+  star: "M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
+  starOff: "M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z",
+  history: "M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z",
+  edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
   map: "m20.5 3-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z",
 };
 const icon = (name, cls = "", label = "") =>
@@ -66,6 +72,34 @@ const S = {
   pickOnMapFor: null,
   installPrompt: null,
 };
+
+// ---------- favoritos e recentes (guardados só neste aparelho) ----------
+
+const FAV_KEY = "candango.favoritos";
+const MAX_RECENTS = 5;
+const FAV_PLACES = { casa: { label: "Casa", icon: "home" }, trabalho: { label: "Trabalho", icon: "work" } };
+
+const Fav = (() => {
+  let d = {};
+  try { d = JSON.parse(localStorage.getItem(FAV_KEY)) ?? {}; } catch {}
+  d.places ??= {};
+  d.lines ??= [];
+  d.recents ??= [];
+  const save = () => { try { localStorage.setItem(FAV_KEY, JSON.stringify(d)); } catch {} };
+  const samePlace = (a, b) => Geo.dist(a.pos, b.pos) < 30;
+  return {
+    place: (k) => d.places[k] ?? null,
+    setPlace(k, e) { if (e) d.places[k] = { name: e.name, pos: e.pos }; else delete d.places[k]; save(); },
+    get lines() { return d.lines; },
+    hasLine: (n) => d.lines.includes(n),
+    toggleLine(n) { d.lines = d.lines.includes(n) ? d.lines.filter((x) => x !== n) : [...d.lines, n]; save(); },
+    get recents() { return d.recents; },
+    addRecent(e) {
+      d.recents = [{ name: e.name, pos: e.pos }, ...d.recents.filter((r) => !samePlace(r, e))].slice(0, MAX_RECENTS);
+      save();
+    },
+  };
+})();
 
 const screen = () => S.stack[S.stack.length - 1];
 const effectiveOrigin = () => S.origin ?? (S.myLocation ? { name: "Minha localização", pos: S.myLocation, isMe: true } : null);
@@ -123,7 +157,18 @@ function closeOverlays() {
   S.pickOnMapFor = null;
 }
 
+/** Destino de uma escolha feita na busca ou no mapa: partida, destino, Casa/Trabalho ou "onde estou". */
+function choose(field, e) {
+  if (field === "me") setManualMe(e.pos);
+  else if (FAV_PLACES[field]) {
+    Fav.setPlace(field, { name: e.isMe ? FAV_PLACES[field].label : e.name, pos: e.pos });
+    closeOverlays();
+    renderAll();
+  } else setEndpoint(field, e);
+}
+
 function setEndpoint(field, e) {
+  if (e && !e.isMe && !e.fav) Fav.addRecent(e);
   if (field === "origin") S.origin = e?.isMe ? null : e;
   else S.dest = e;
   closeOverlays();
@@ -181,11 +226,14 @@ function replan(silent = false) {
 // ---------- busca ----------
 
 function openSearch(field) {
-  S.search = { field, query: "", hits: field == null ? Repo.lines.slice(0, 40).map((line) => ({ line })) : [], searching: false };
+  S.search = { field, query: "", hits: localHits("", field == null), searching: false };
   renderAll();
   const input = document.getElementById("search-input");
   input.value = "";
-  input.placeholder = field === "origin" ? "De onde você sai?" : field === "dest" ? "Endereço, lugar ou parada" : "Número ou nome da linha";
+  input.placeholder = field === "origin" ? "De onde você sai?"
+    : field === "dest" ? "Endereço, lugar ou parada"
+    : FAV_PLACES[field] ? `Endereço de ${FAV_PLACES[field].label.toLowerCase()}`
+    : "Número ou nome da linha";
   input.focus();
 }
 
@@ -218,7 +266,12 @@ function onSearchQuery(q) {
 }
 
 function localHits(q, linesOnly) {
-  if (!q) return linesOnly ? Repo.lines.slice(0, 40).map((line) => ({ line })) : [];
+  if (!q) {
+    if (!linesOnly) return [];
+    // linhas favoritas primeiro
+    const favs = Fav.lines.map((n) => Repo.lineByNumero.get(n)).filter(Boolean);
+    return [...favs, ...Repo.lines.filter((l) => !Fav.hasLine(l.numero)).slice(0, 40)].map((line) => ({ line }));
+  }
   const norm = q.toLowerCase();
   const lines = Repo.lines
     .filter((l) => l.numero.startsWith(q) || l.descricao.toLowerCase().includes(norm))
@@ -233,11 +286,11 @@ function onSearchHit(hit) {
   const field = S.search?.field;
   if (hit.line) { closeOverlays(); openLine(hit.line); return; }
   if (hit.stop) {
-    if (field) setEndpoint(field, { name: hit.stop.label, pos: hit.stop.pos });
+    if (field) choose(field, { name: hit.stop.label, pos: hit.stop.pos });
     else { closeOverlays(); openStop(hit.stop); }
     return;
   }
-  if (hit.place && field) setEndpoint(field, { name: hit.place.name, pos: hit.place.pos });
+  if (hit.place && field) choose(field, { name: hit.place.name, pos: hit.place.pos });
 }
 
 function startPick(field) {
@@ -407,9 +460,8 @@ function renderMap() {
 }
 
 function onMapClick(latlon, hit) {
-  if (S.pickOnMapFor === "me") { setManualMe(latlon); return; }
   if (S.pickOnMapFor) {
-    setEndpoint(S.pickOnMapFor, { name: "Ponto no mapa", pos: latlon });
+    choose(S.pickOnMapFor, { name: "Ponto no mapa", pos: latlon });
     return;
   }
   if (hit.linha && Repo.lineByNumero.has(hit.linha)) openLine(Repo.lineByNumero.get(hit.linha));
@@ -457,9 +509,10 @@ function renderTop() {
     html = `<div class="card titlebar"><button class="icon-btn" data-act="back">${icon("back", "", "Voltar")}</button><b>${esc(title)}</b></div>`;
   }
   if (S.pickOnMapFor) {
-    html += banner(S.pickOnMapFor === "me"
-      ? "Toque no mapa onde você está"
-      : `Toque no mapa para escolher o ${S.pickOnMapFor === "origin" ? "ponto de partida" : "destino"}`, true);
+    const f = S.pickOnMapFor;
+    html += banner(f === "me" ? "Toque no mapa onde você está"
+      : FAV_PLACES[f] ? `Toque no mapa para marcar ${f === "casa" ? "sua casa" : "seu trabalho"}`
+      : `Toque no mapa para escolher o ${f === "origin" ? "ponto de partida" : "destino"}`, true);
   }
   if (S.liveError) html += banner(S.liveError, false);
   top.innerHTML = html;
@@ -509,11 +562,18 @@ function homeContent() {
   } else if (!standalone && isIos) {
     install = `<p class="tip">📲 <b>Instale no iPhone:</b> toque em <b>Compartilhar</b> <span class="share">⎋</span> e depois em <b>Adicionar à Tela de Início</b>.</p>`;
   }
+  const places = Object.entries(FAV_PLACES).map(([k, f]) => {
+    const p = Fav.place(k);
+    return `<div class="fav ${p ? "" : "empty"}">
+      <button class="fav-main" data-act="fav-go" data-k="${k}">${icon(f.icon)}<span><b>${f.label}</b><small class="muted ellipsis">${p ? esc(p.name) : "Toque para definir"}</small></span></button>
+      ${p ? `<button class="icon-btn small" data-act="fav-edit" data-k="${k}">${icon("edit", "", `Mudar ${f.label}`)}</button>` : ""}
+    </div>`;
+  }).join("");
+  const favLines = Fav.lines.filter((n) => Repo.lineByNumero.has(n));
   return `<div class="pad">
     ${liveStatus()}
-    <h2>Para onde vamos?</h2>
-    <p class="muted">Escolha um destino para ver as linhas que levam até lá agora e nas próximas 3 horas.
-      Dica: toque e segure no mapa para marcar o destino.</p>
+    <div class="favs">${places}</div>
+    ${favLines.length ? `<div class="chips inline">${favLines.map((n) => `<button class="chip-badge" data-act="line" data-n="${esc(n)}">${badge(n)}</button>`).join("")}</div>` : ""}
     <div class="row gap">
       <button class="btn" data-act="lines">${icon("bus")}Linhas</button>
       <button class="btn" data-act="nearest" ${S.myLocation ? "" : "disabled"}>${icon("myloc")}Parada mais próxima</button>
@@ -522,9 +582,61 @@ function homeContent() {
     ${locationIsPoor() ? `<p class="tip warn">📍 Sua localização pode estar errada (margem de ~${fmtDist(S.myAccuracyM)}). No computador ela é estimada pela internet, sem GPS.
       <button class="link" data-act="pick-me">Marcar onde estou</button></p>` : ""}
     ${S.manualMe ? `<p class="small muted">📍 Localização marcada no mapa · <button class="link" data-act="pick-me">mudar</button></p>` : ""}
-    ${S.locationDenied || locationIsPoor() || S.manualMe ? "" : `<p class="small muted"><button class="link" data-act="pick-me">Localização errada? Marque no mapa</button></p>`}
     ${install}
+    ${nearbyContent()}
+    ${S.locationDenied || locationIsPoor() || S.manualMe || !S.myLocation ? "" : `<p class="small muted"><button class="link" data-act="pick-me">Localização errada? Marque no mapa</button></p>`}
+    ${S.myLocation ? "" : `<p class="muted small">Dica: toque e segure no mapa para marcar o destino.</p>`}
   </div>`;
+}
+
+// ---------- "Perto de mim": próximas linhas nas paradas ao redor ----------
+
+const NEARBY_RADIUS_M = 500;
+const NEARBY_MAX_STOPS = 15;
+const NEARBY_ROWS = 8;
+let nearbyCache = { key: null, rows: [] };
+
+/** Uma linha por sentido, na parada próxima onde ela passa primeiro. */
+function nearbyRows() {
+  const me = S.myLocation;
+  if (!me || !S.loaded) return [];
+  const stops = Repo.stopsNear(me, NEARBY_RADIUS_M).slice(0, NEARBY_MAX_STOPS);
+  const key = `${stops.map(([s]) => s.idx).join(",")}|${S.busesUpdatedAt}|${spTime().min}`;
+  if (nearbyCache.key === key) return nearbyCache.rows;
+  const nowMin = spTime().min;
+  const best = new Map();
+  for (const [stop, d] of stops) {
+    const walk = walkMinutes(walkM(d));
+    for (const r of stopDepartures(stop, Date.now(), 90, S.buses)) {
+      // só vale se dá tempo de chegar à parada a pé
+      const live = r.live && r.live.minutes >= walk ? r.live : null;
+      const at = live ? nowMin + live.minutes : r.passes.find((p) => p >= nowMin + walk);
+      if (at == null) continue;
+      const cur = best.get(r.dir);
+      if (!cur || at < cur.at) best.set(r.dir, { ...r, live, stop, distM: walkM(d), at });
+    }
+  }
+  const rows = [...best.values()]
+    .sort((a, b) => (Fav.hasLine(b.dir.line.numero) - Fav.hasLine(a.dir.line.numero)) || a.at - b.at)
+    .slice(0, NEARBY_ROWS);
+  nearbyCache = { key, rows };
+  return rows;
+}
+
+function nearbyContent() {
+  if (!S.myLocation || !S.loaded) return "";
+  const rows = nearbyRows();
+  const nowMin = spTime().min;
+  let html = `<h3>Perto de você</h3>`;
+  if (!rows.length) return html + `<p class="muted small">Nenhuma linha passando a até ${NEARBY_RADIUS_M} m nos próximos 90 minutos.</p>`;
+  html += `<div class="nearby">`;
+  html += rows.map((r) => `<button class="item" data-act="stop" data-i="${r.stop.idx}">
+      ${badge(r.dir.line.numero)}${Fav.hasLine(r.dir.line.numero) ? icon("star", "c-star") : ""}
+      <div class="grow"><div class="ellipsis small">${esc(r.dir.line.descricao)}</div>
+        <small class="muted ellipsis">${esc(r.stop.label)} · ${r.distM} m · ${r.dir.label}</small></div>
+      <div class="right">${r.live ? liveMinutes(r.live) : `<b>${Time.wait(r.at - nowMin)}</b><small class="muted">${Time.fmt(r.at)}</small>`}</div>
+    </button>`).join("");
+  return html + `</div>`;
 }
 
 function planContent() {
@@ -627,9 +739,11 @@ function lineContent(line, dirIndex) {
   if (!dir) return "";
   const live = liveBusesOf(line);
   const now = spTime();
+  const fav = Fav.hasLine(line.numero);
   return `<div class="pad">
     <div class="row head">${badge(line.numero, true)}<div class="grow"><b>${esc(line.descricao)}</b>
-      ${line.tarifa != null ? `<br><small class="muted">Tarifa ${brl(line.tarifa)}</small>` : ""}</div></div>
+      ${line.tarifa != null ? `<br><small class="muted">Tarifa ${brl(line.tarifa)}</small>` : ""}</div>
+      <button class="icon-btn" data-act="fav-line" data-n="${esc(line.numero)}">${icon(fav ? "star" : "starOff", "c-star", fav ? "Tirar dos favoritos" : "Favoritar linha")}</button></div>
     ${line.dirs.length > 1 ? `<div class="chips inline">${line.dirs.map((d, i) => `<button class="chip ${i === dirIndex ? "on" : ""}" data-act="dir" data-i="${i}">${d.label}</button>`).join("")}</div>` : ""}
     <p class="small ${live.length ? "c-live" : "muted"}">${icon("live")} ${live.length ? `${live.length} ônibus desta linha no mapa agora` : "Nenhum ônibus desta linha com GPS ativo agora"}</p>
     <small class="muted">${dir.stopIdx.length} paradas · ${km(dir.lengthM)} km · ~${dir.durMin} min de viagem</small>
@@ -674,6 +788,16 @@ function renderSearchList() {
   if (s.field) {
     if (S.myLocation) html += searchRow("myloc", "Minha localização", "", `data-act="hit-me"`);
     html += searchRow("map", "Escolher no mapa", "", `data-act="pick"`);
+    if (FAV_PLACES[s.field] && Fav.place(s.field)) html += searchRow("close", `Remover ${FAV_PLACES[s.field].label}`, "", `data-act="fav-remove"`);
+    if (!s.query.trim()) {
+      if (!FAV_PLACES[s.field]) {
+        for (const [k, f] of Object.entries(FAV_PLACES)) {
+          const p = Fav.place(k);
+          if (p) html += searchRow(f.icon, f.label, p.name, `data-act="hit-fav" data-k="${k}"`);
+        }
+      }
+      Fav.recents.forEach((r, i) => { html += searchRow("history", r.name, "Recente", `data-act="hit-recent" data-i="${i}"`); });
+    }
   }
   s.hits.forEach((h, i) => {
     if (h.place) html += searchRow("place", h.place.name, h.place.detail, `data-act="hit" data-i="${i}"`);
@@ -723,7 +847,19 @@ document.addEventListener("click", (e) => {
     case "line": openLine(Repo.lineByNumero.get(b.dataset.n)); break;
     case "go-here": setEndpoint("dest", { name: s.stop.label, pos: s.stop.pos }); break;
     case "hit": onSearchHit(S.search.hits[+b.dataset.i]); break;
-    case "hit-me": setEndpoint(S.search.field, { name: "Minha localização", pos: S.myLocation, isMe: true }); break;
+    case "hit-me": choose(S.search.field, { name: "Minha localização", pos: S.myLocation, isMe: true }); break;
+    case "hit-recent": choose(S.search.field, Fav.recents[+b.dataset.i]); break;
+    case "hit-fav": { const k = b.dataset.k; choose(S.search.field, { name: FAV_PLACES[k].label, pos: Fav.place(k).pos, fav: true }); break; }
+    case "fav-remove": Fav.setPlace(S.search.field, null); goBack(); break;
+    case "fav-go": {
+      const k = b.dataset.k, p = Fav.place(k);
+      if (p) setEndpoint("dest", { name: FAV_PLACES[k].label, pos: p.pos, fav: true });
+      else openSearch(k);
+      break;
+    }
+    case "fav-edit": openSearch(b.dataset.k); break;
+    case "fav-line": Fav.toggleLine(b.dataset.n); renderAll(); break;
+    case "stop": openStop(Repo.stops[+b.dataset.i]); break;
     case "pick": startPick(S.search.field); break;
     case "pick-me": startPick("me"); break;
     case "close-search": goBack(); break;
