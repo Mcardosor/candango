@@ -1,7 +1,7 @@
 // Service worker do Candango: guarda o app e os dados fixos para abrir rápido (e sem internet).
 // GPS dos ônibus, busca de endereços e mapa sempre vêm da rede.
 // Ao publicar mudanças, troque a versão para os celulares baixarem os arquivos novos.
-const CACHE = "candango-v0.4.0";
+const CACHE = "candango-v0.5.0";
 const SHELL = [
   "./", "index.html", "app.css", "manifest.webmanifest", "dados.json",
   "js/app.js", "js/model.js", "js/planner.js", "js/live.js", "js/map.js",
@@ -25,6 +25,15 @@ self.addEventListener("activate", (e) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
+  );
+});
+
+// tocar no aviso ("ônibus chegando", "desça na próxima") volta para o app
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true })
+      .then((cs) => (cs.length ? cs[0].focus() : self.clients.openWindow("./"))),
   );
 });
 

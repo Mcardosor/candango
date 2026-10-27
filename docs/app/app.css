@@ -128,6 +128,24 @@ small { font-size: 12px; }
 .c-star { fill: #F59E0B; }
 .item .c-star { width: 14px; height: 14px; margin-left: -6px; }
 .nearby { margin: 0 -16px; }
+div.item { cursor: pointer; }
+.icon-btn.bell { width: 38px; height: 38px; margin-right: -8px; fill: var(--muted); }
+.icon-btn.bell.on, .btn.on { fill: #F59E0B; }
+.btn.on { border-color: #F59E0B; background: #FFF8E6; }
+.banner.alert { background: #5B4300; }
+.banner.alert .ic { fill: #FCD34D; }
+.banner.toast { background: var(--green); }
+
+/* viagem em andamento */
+.trip-actions { margin: 4px 0 8px; }
+.trip-actions .btn.primary { margin-top: 0; }
+.trip-now { margin: 12px 0 8px; padding: 14px 16px; border-radius: 14px; background: #EEF6F2; }
+.trip-now.urgent { background: #FDE8E8; animation: pulse 1s ease-in-out infinite alternate; }
+.trip-big { font-size: 1.45rem; font-weight: 700; margin-bottom: 2px; }
+.trip-now.urgent .trip-big { color: #B91C1C; }
+@keyframes pulse { to { background: #FBD0D0; } }
+.row .done { opacity: 0.35; }
+.row .now .badge { outline: 3px solid #FCD34D; outline-offset: 1px; }
 .nearby .item:last-child { border-bottom: 0; }
 .link { color: var(--me); font-weight: 600; text-decoration: underline; display: inline; }
 .share { display: inline-block; transform: rotate(-90deg); }
