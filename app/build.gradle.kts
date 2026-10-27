@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.mcardosor.candango"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.3.1"
     }
 
     // Chave de release via variáveis de ambiente (secrets no GitHub Actions; localmente, exporte as mesmas variáveis).

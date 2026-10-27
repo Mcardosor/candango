@@ -1,6 +1,9 @@
 package io.github.mcardosor.candango.ui
 
+import android.animation.ValueAnimator
 import android.graphics.PointF
+import android.os.SystemClock
+import android.view.Choreographer
 import io.github.mcardosor.candango.data.Bus
 import io.github.mcardosor.candango.data.LatLon
 import io.github.mcardosor.candango.data.Stop
@@ -49,6 +52,8 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import kotlin.math.cos
+import kotlin.math.hypot
 
 /** Linha desenhada no mapa. */
 data class MapLine(val points: List<LatLon>, val color: String, val dashed: Boolean = false)
@@ -67,6 +72,15 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
         private const val FONT = "Noto Sans Bold"
         private const val ME_COLOR = "#1E88E5"
         private const val MAX_FIT_ZOOM = 17.0
+        private const val SLIDE_MS = 1500L // duração do deslize de um ônibus até a nova posição
+        private const val SLIDE_MAX_M = 2000.0 // acima disso é salto do GPS, não movimento
+        private const val FRAME_MS = 30L
+
+        private fun distanceM(a: LatLon, b: LatLon): Double {
+            val dy = (a.lat - b.lat) * 111_320.0
+            val dx = (a.lon - b.lon) * 111_320.0 * cos(Math.toRadians(a.lat))
+            return hypot(dx, dy)
+        }
     }
 
     private val allStopsSrc = GeoJsonSource("todas-paradas")
@@ -181,9 +195,67 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
         }))
     }
 
-    fun setBuses(buses: List<MapBus>) {
+    /** Deslize de um ônibus da posição antiga até a nova (tempos em ms de [SystemClock.uptimeMillis]). */
+    private class Slide(val from: LatLon, val to: LatLon, val t0: Long) {
+        fun at(now: Long): LatLon {
+            val t = ((now - t0).toDouble() / SLIDE_MS).coerceIn(0.0, 1.0)
+            val e = t * (2 - t) // começa rápido e chega devagar
+            return LatLon(from.lat + (to.lat - from.lat) * e, from.lon + (to.lon - from.lon) * e)
+        }
+        fun done(now: Long) = now - t0 >= SLIDE_MS
+    }
+
+    private var buses: List<MapBus> = emptyList()
+    private var slides: Map<String, Slide> = emptyMap() // id do ônibus → deslize
+    private var frameScheduled = false
+    private var lastDraw = 0L
+
+    private val frame = Choreographer.FrameCallback {
+        frameScheduled = false
+        val now = SystemClock.uptimeMillis()
+        // ~30 quadros/s bastam e poupam bateria: cada quadro reenvia todos os ônibus para o mapa
+        if (now - lastDraw < FRAME_MS) scheduleFrame() else drawBuses(now)
+    }
+
+    private fun scheduleFrame() {
+        if (frameScheduled) return
+        frameScheduled = true
+        Choreographer.getInstance().postFrameCallback(frame)
+    }
+
+    /**
+     * Ônibus no mapa. Quando a posição de um ônibus muda, ele desliza da antiga até a nova em vez
+     * de pular (saltos longos, como o GPS voltando depois de um túnel, continuam sendo pulos).
+     */
+    fun setBuses(list: List<MapBus>) {
+        val now = SystemClock.uptimeMillis()
+        // "remover animações" nas opções do Android desliga também o deslize
+        val animate = ValueAnimator.areAnimatorsEnabled()
+        val next = HashMap<String, Slide>(list.size)
+        for (b in list) {
+            val id = b.bus.id
+            if (id.isEmpty()) continue
+            val to = b.bus.pos
+            val old = slides[id]
+            next[id] = when {
+                old != null && old.to == to -> old // mesma posição: segue o deslize em curso
+                old != null && animate && distanceM(old.at(now), to) < SLIDE_MAX_M -> Slide(old.at(now), to, now)
+                else -> Slide(to, to, now - SLIDE_MS)
+            }
+        }
+        buses = list
+        slides = next
+        drawBuses(now)
+    }
+
+    private fun drawBuses(now: Long) {
+        lastDraw = now
+        var moving = false
         busesSrc.setGeoJson(FeatureCollection.fromFeatures(buses.map { b ->
-            Feature.fromGeometry(Point.fromLngLat(b.bus.pos.lon, b.bus.pos.lat)).apply {
+            val slide = slides[b.bus.id]
+            if (slide != null && !slide.done(now)) moving = true
+            val p = slide?.at(now) ?: b.bus.pos
+            Feature.fromGeometry(Point.fromLngLat(p.lon, p.lat)).apply {
                 val h = b.bus.heading
                 addStringProperty("color", b.color)
                 addStringProperty("label", b.bus.linha ?: "")
@@ -194,6 +266,13 @@ class MapController(private val map: MapLibreMap, private val style: Style) {
                 addBooleanProperty("arrow", h != null && !(h == 0.0 && (b.bus.speedKmh ?: 0.0) == 0.0))
             }
         }))
+        if (moving) scheduleFrame()
+    }
+
+    /** Para o deslize (o mapa vai ser destruído). */
+    fun dispose() {
+        Choreographer.getInstance().removeFrameCallback(frame)
+        frameScheduled = false
     }
 
     fun setMarkers(markers: List<MapMarker>) {

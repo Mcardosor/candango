@@ -7,6 +7,9 @@ const FONT = ["Noto Sans Bold"];
 export const ME_COLOR = "#1E88E5";
 const MAX_FIT_ZOOM = 17;
 const LONG_PRESS_MS = 550;
+const SLIDE_MS = 1500; // duração do deslize de um ônibus até a nova posição
+const SLIDE_MAX_M = 2000; // acima disso é salto do GPS, não movimento
+const FRAME_MS = 30;
 const BUS_PATH = new Path2D("M4 16c0 .88.39 1.67 1 2.22V20a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h8v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm1.5-6H6V6h12v5z");
 
 const fc = (features) => ({ type: "FeatureCollection", features });
@@ -20,6 +23,10 @@ export class MapView {
    */
   constructor(container, handlers) {
     this.handlers = handlers;
+    this._buses = [];
+    this._slides = new Map(); // id do ônibus → {from, to, t0}
+    this._frame = null;
+    this._lastDraw = 0;
     this.map = new maplibregl.Map({
       container,
       style: STYLE_URL,
@@ -201,15 +208,60 @@ export class MapView {
   /** paradas destacadas, cada uma com a cor da sua linha: [[stop, color], ...] */
   setColoredStops(list) { this._set("paradas", list.map(([s, color]) => pt(s.pos, { color, idx: s.idx }))); }
 
+  /**
+   * Ônibus no mapa. Quando a posição de um ônibus muda, ele desliza da posição antiga até a nova
+   * em vez de pular (saltos longos, como a volta do GPS depois de um túnel, continuam sendo pulos).
+   */
   setBuses(list) {
-    this._set("onibus", list.map(({ bus, color, highlight }) => {
+    const now = performance.now();
+    const animate = !matchMedia("(prefers-reduced-motion: reduce)").matches && !document.hidden;
+    const slides = new Map();
+    this._buses = list.map(({ bus, color, highlight }) => {
       // direção 0 com o ônibus parado costuma ser "sem direção": aí fica só o círculo
       const arrow = bus.heading != null && !(bus.heading === 0 && !bus.speedKmh);
-      return pt(bus.pos, {
+      const props = {
         color, label: bus.linha ?? "", linha: bus.linha ?? "", highlight: !!highlight,
         heading: bus.heading ?? 0, arrow,
-      });
+      };
+      const key = bus.id || null;
+      let slide = null;
+      if (key) {
+        const old = this._slides.get(key);
+        if (old && samePos(old.to, bus.pos)) slide = old; // mesma posição: segue o deslize que já estava em curso
+        else {
+          const from = old ? slidePos(old, now) : null;
+          slide = from && animate && metersApprox(from, bus.pos) < SLIDE_MAX_M
+            ? { from, to: bus.pos, t0: now }
+            : { from: bus.pos, to: bus.pos, t0: now - SLIDE_MS };
+        }
+        slides.set(key, slide);
+      }
+      return { props, pos: bus.pos, slide };
+    });
+    this._slides = slides;
+    this._drawBuses(now);
+  }
+
+  _drawBuses(now) {
+    let moving = false;
+    this._set("onibus", this._buses.map(({ props, pos, slide }) => {
+      if (!slide) return pt(pos, props);
+      if (now - slide.t0 < SLIDE_MS) moving = true;
+      return pt(slidePos(slide, now), props);
     }));
+    this._lastDraw = now;
+    if (moving && !this._frame) this._frame = requestAnimationFrame(() => this._nextFrame());
+  }
+
+  _nextFrame() {
+    // ~30 quadros/s bastam e poupam o celular: cada quadro reenvia todos os ônibus para o mapa
+    const now = performance.now();
+    if (now - this._lastDraw < FRAME_MS) {
+      this._frame = requestAnimationFrame(() => this._nextFrame());
+      return;
+    }
+    this._frame = null;
+    this._drawBuses(now);
   }
 
   setMarkers(list) { this._set("marcadores", list.map((m) => pt(m.pos, { kind: m.kind, label: m.label ?? "" }))); }
@@ -236,4 +288,12 @@ export class MapView {
 }
 
 const toLatLon = (ll) => ({ lat: ll.lat, lon: ll.lng });
+const samePos = (a, b) => a.lat === b.lat && a.lon === b.lon;
+const metersApprox = (a, b) =>
+  Math.hypot((a.lat - b.lat) * 111_320, (a.lon - b.lon) * 111_320 * Math.cos((a.lat * Math.PI) / 180));
+function slidePos({ from, to, t0 }, now) {
+  const t = Math.min(1, Math.max(0, (now - t0) / SLIDE_MS));
+  const e = t * (2 - t); // começa rápido e chega devagar
+  return { lat: from.lat + (to.lat - from.lat) * e, lon: from.lon + (to.lon - from.lon) * e };
+}
 const pad = (p, extra) => ({ top: p.top + extra, bottom: p.bottom + extra, left: p.left + extra, right: p.right + extra });

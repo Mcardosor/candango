@@ -99,7 +99,16 @@ small { font-size: 12px; }
   box-shadow: 0 -4px 22px rgba(0, 0, 0, 0.14);
   padding-bottom: var(--safe-bottom);
 }
-.grip { width: 36px; height: 4px; border-radius: 4px; background: #D1D5DB; margin: 8px auto 0; flex: none; }
+.grip { width: 36px; height: 4px; border-radius: 4px; background: #D1D5DB; margin: 0 auto; }
+/* faixa de arrastar: bem mais alta que o tracinho, para o dedo acertar */
+.grip-area { flex: none; padding: 10px 0 8px; cursor: grab; touch-action: none; outline-offset: -3px; }
+#panel { transition: max-height .25s ease; }
+#panel.dragging { transition: none; }
+#panel.dragging .grip-area { cursor: grabbing; }
+@media (max-width: 899px) {
+  #panel.peek { max-height: 120px; }
+  #panel.full { max-height: 88vh; max-height: 88dvh; }
+}
 .panel-body { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .panel-body p { margin: 4px 0; }
 
@@ -227,6 +236,7 @@ div.item { cursor: pointer; }
     left: 12px; right: auto; bottom: 12px; width: 400px;
     max-height: calc(100vh - 220px); border-radius: 16px;
   }
+  .grip-area { display: none; }
   .fab { bottom: 24px; right: 24px; }
   #search { inset: 12px auto 12px 12px; width: 400px; border-radius: 16px; box-shadow: var(--shadow); }
 }

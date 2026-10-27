@@ -577,7 +577,7 @@ function mapPadding() {
   const wide = matchMedia("(min-width: 900px)").matches;
   const top = document.getElementById("top").getBoundingClientRect();
   if (wide) return { top: 12, bottom: 12, left: top.right + 12, right: 12 };
-  return { top: top.bottom + 8, bottom: Math.round(innerHeight * 0.48), left: 0, right: 0 };
+  return { top: top.bottom + 8, bottom: document.getElementById("panel").offsetHeight + 8, left: 0, right: 0 };
 }
 
 function fitKey() {
@@ -749,6 +749,8 @@ function renderPanel() {
   else if (s.type === "trip") html = tripContent(s);
   else if (s.type === "line") html = lineContent(s.line, s.dirIndex);
   else html = stopContent(s.stop);
+  // tela nova abre o painel na altura do meio, mesmo que a anterior estivesse recolhida ou aberta
+  if (body.dataset.view && body.dataset.view !== viewKey && panelSnap !== "mid") setPanelSnap("mid");
   if (body.dataset.view !== viewKey || lastPanelHtml !== html) {
     body.innerHTML = html;
     body.dataset.view = viewKey;
@@ -1098,8 +1100,8 @@ const searchRow = (ic, title, sub, attrs) =>
 
 function renderFab() {
   const fab = $("fab");
-  fab.hidden = !(S.myLocation && !S.pickOnMapFor && S.loaded);
   const wide = matchMedia("(min-width: 900px)").matches;
+  fab.hidden = !(S.myLocation && !S.pickOnMapFor && S.loaded) || (!wide && panelSnap === "full");
   fab.style.bottom = wide ? "" : `${$("panel").offsetHeight + 12}px`;
 }
 
@@ -1179,6 +1181,61 @@ document.addEventListener("change", (e) => {
 
 $("search-input").addEventListener("input", (e) => onSearchQuery(e.target.value));
 window.addEventListener("resize", renderFab);
+
+// ---------- painel arrastável (celular) ----------
+// Três alturas: só o começo ("peek", para ver mais mapa), a do meio (padrão) e quase a tela toda.
+
+const PANEL_SNAPS = ["peek", "mid", "full"];
+let panelSnap = "mid";
+
+function setPanelSnap(name) {
+  panelSnap = name;
+  const panel = $("panel");
+  panel.classList.toggle("peek", name === "peek");
+  panel.classList.toggle("full", name === "full");
+  panel.style.maxHeight = "";
+  renderFab();
+}
+
+{
+  const panel = $("panel");
+  const grip = panel.querySelector(".grip-area");
+  let drag = null;
+  grip.addEventListener("pointerdown", (e) => {
+    grip.setPointerCapture(e.pointerId);
+    drag = { y0: e.clientY, h0: panel.offsetHeight, y: e.clientY, t: performance.now(), v: 0 };
+    panel.classList.add("dragging");
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const now = performance.now();
+    drag.v = (drag.y - e.clientY) / Math.max(1, now - drag.t); // px/ms, positivo = subindo
+    drag.y = e.clientY;
+    drag.t = now;
+    const h = Math.min(innerHeight * 0.88, Math.max(80, drag.h0 + drag.y0 - e.clientY));
+    panel.style.maxHeight = `${h}px`;
+  });
+  const end = () => {
+    if (!drag) return;
+    const moved = Math.abs(drag.y - drag.y0), h = panel.offsetHeight, v = drag.v;
+    drag = null;
+    panel.classList.remove("dragging");
+    if (moved < 6) return setPanelSnap(panelSnap === "mid" ? "full" : "mid"); // toque: abre ou volta ao meio
+    // numa jogada rápida o painel segue um pouco além de onde o dedo soltou
+    const target = h + v * 250;
+    const heights = { peek: 120, mid: innerHeight * 0.46, full: innerHeight * 0.88 };
+    setPanelSnap(PANEL_SNAPS.reduce((a, b) => (Math.abs(heights[b] - target) < Math.abs(heights[a] - target) ? b : a)));
+  };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  grip.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    setPanelSnap(panelSnap === "mid" ? "full" : "mid");
+  });
+  // o botão "voltar para mim" acompanha a altura do painel
+  new ResizeObserver(renderFab).observe(panel);
+}
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   S.installPrompt = e;

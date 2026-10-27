@@ -8,12 +8,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -118,6 +122,7 @@ import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import java.time.ZonedDateTime
 import java.util.Locale
+import kotlin.math.abs
 
 private val Green = Color(0xFF0B8A5F)
 private val LiveGreen = Color(0xFF00A86B)
@@ -137,7 +142,11 @@ fun AppRoot(vm: AppViewModel) {
     val density = LocalDensity.current
     val screenH = LocalConfiguration.current.screenHeightDp
     var panelHeightPx by remember { mutableStateOf(0) }
-    val fitBottomPx = with(density) { (screenH * 0.48f).dp.roundToPx() }
+    var panelSnap by remember { mutableStateOf(PanelSnap.MID) }
+    // tela nova abre o painel na altura do meio, mesmo que a anterior estivesse recolhida ou aberta
+    LaunchedEffect(vm.screen::class) { panelSnap = PanelSnap.MID }
+    // enquadra o mapa na parte que o painel deixa livre, na altura em que ele estiver
+    val fitBottomPx = with(density) { if (panelHeightPx > 0) panelHeightPx + 8.dp.roundToPx() else (screenH * 0.48f).dp.roundToPx() }
     val fitTopPx = with(density) { 200.dp.roundToPx() }
 
     BackHandler(enabled = vm.canGoBack || vm.searchFor != null || vm.searchLinesOnly || vm.pickOnMapFor != null) { vm.back() }
@@ -163,6 +172,7 @@ fun AppRoot(vm: AppViewModel) {
 
         // Atualiza o conteúdo do mapa sempre que algo relevante muda
         val c = controller
+        DisposableEffect(c) { onDispose { c?.dispose() } }
         LaunchedEffect(c, vm.screen, vm.buses, vm.origin, vm.dest, vm.myLocation, vm.loaded, vm.trip?.option) {
             if (c != null && vm.loaded) renderMap(c, vm)
         }
@@ -205,11 +215,11 @@ fun AppRoot(vm: AppViewModel) {
             }
         }
 
-        BottomPanel(vm, Modifier.align(Alignment.BottomCenter).onSizeChanged { panelHeightPx = it.height })
+        BottomPanel(vm, panelSnap, { panelSnap = it }, Modifier.align(Alignment.BottomCenter).onSizeChanged { panelHeightPx = it.height })
 
-        // botão "voltar para mim", logo acima do painel
+        // botão "voltar para mim", logo acima do painel (some com o painel aberto na tela toda)
         val me = vm.myLocation
-        if (c != null && me != null && vm.pickOnMapFor == null) {
+        if (c != null && me != null && vm.pickOnMapFor == null && panelSnap != PanelSnap.FULL) {
             Surface(
                 onClick = { c.center(me, 16.0, fitBottomPx, fitTopPx) },
                 shape = CircleShape, color = Color.White, shadowElevation = 6.dp,
@@ -498,16 +508,52 @@ private fun Banner(text: String, color: Color = Color(0xFF263238), onClose: (() 
 // Painel inferior
 // =====================================================================================
 
+/** Alturas do painel: só o começo (para ver mais mapa), a do meio (padrão) e quase a tela toda. */
+enum class PanelSnap { PEEK, MID, FULL }
+
 @Composable
-private fun BottomPanel(vm: AppViewModel, modifier: Modifier) {
-    val maxH = (LocalConfiguration.current.screenHeightDp * 0.46f).dp
+private fun BottomPanel(vm: AppViewModel, snap: PanelSnap, onSnap: (PanelSnap) -> Unit, modifier: Modifier) {
+    val density = LocalDensity.current
+    val screenH = LocalConfiguration.current.screenHeightDp.dp
+    fun heightOf(s: PanelSnap) = when (s) {
+        PanelSnap.PEEK -> 120.dp
+        PanelSnap.MID -> screenH * 0.46f
+        PanelSnap.FULL -> screenH * 0.88f
+    }
+    var shownPx by remember { mutableStateOf(0) }
+    var dragPx by remember { mutableStateOf<Float?>(null) } // altura enquanto o dedo arrasta
+    val animated by animateDpAsState(heightOf(snap), label = "painel")
+    val maxH = dragPx?.let { with(density) { it.toDp() } } ?: animated
+    val dragState = rememberDraggableState { delta ->
+        val minPx = with(density) { 80.dp.toPx() }
+        val maxPx = with(density) { heightOf(PanelSnap.FULL).toPx() }
+        dragPx = ((dragPx ?: shownPx.toFloat()) - delta).coerceIn(minPx, maxPx)
+    }
     Surface(
-        modifier = modifier.fillMaxWidth().heightIn(max = maxH),
+        modifier = modifier.fillMaxWidth().heightIn(max = maxH).onSizeChanged { shownPx = it.height },
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         shadowElevation = 12.dp, color = Color.White,
     ) {
         Column(Modifier.navigationBarsPadding()) {
-            Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+            // faixa de arrastar: bem mais alta que o tracinho, para o dedo acertar
+            Box(
+                Modifier.fillMaxWidth()
+                    .draggable(
+                        dragState, Orientation.Vertical,
+                        onDragStarted = { dragPx = shownPx.toFloat() },
+                        onDragStopped = { velocity ->
+                            // numa jogada rápida o painel segue um pouco além de onde o dedo soltou
+                            val target = (dragPx ?: shownPx.toFloat()) - velocity * 0.25f
+                            dragPx = null
+                            onSnap(PanelSnap.entries.minBy { abs(with(density) { heightOf(it).toPx() } - target) })
+                        },
+                    )
+                    .clickable(onClickLabel = "Aumentar ou diminuir o painel") {
+                        onSnap(if (snap == PanelSnap.MID) PanelSnap.FULL else PanelSnap.MID)
+                    }
+                    .padding(top = 10.dp, bottom = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 Box(Modifier.size(width = 36.dp, height = 4.dp).clip(CircleShape).background(Color(0xFFD1D5DB)))
             }
             when (val s = vm.screen) {
