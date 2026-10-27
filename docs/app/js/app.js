@@ -87,9 +87,12 @@ const FAV_PLACES = { casa: { label: "Casa", icon: "home" }, trabalho: { label: "
 const Fav = (() => {
   let d = {};
   try { d = JSON.parse(localStorage.getItem(FAV_KEY)) ?? {}; } catch {}
-  d.places ??= {};
-  d.lines ??= [];
-  d.recents ??= [];
+  // dado salvo corrompido não pode derrubar o app
+  const validPlace = (p) => p && typeof p.name === "string" && Number.isFinite(p.pos?.lat) && Number.isFinite(p.pos?.lon);
+  if (typeof d !== "object" || Array.isArray(d)) d = {};
+  d.places = typeof d.places === "object" && d.places ? Object.fromEntries(Object.entries(d.places).filter(([, p]) => validPlace(p))) : {};
+  d.lines = Array.isArray(d.lines) ? d.lines.filter((n) => typeof n === "string") : [];
+  d.recents = Array.isArray(d.recents) ? d.recents.filter(validPlace) : [];
   const save = () => { try { localStorage.setItem(FAV_KEY, JSON.stringify(d)); } catch {} };
   const samePlace = (a, b) => Geo.dist(a.pos, b.pos) < 30;
   return {
@@ -307,8 +310,12 @@ function startPick(field) {
 // ---------- tempo real e localização ----------
 
 let pollTimer = null;
+let polling = false;
 async function poll() {
   clearTimeout(pollTimer);
+  // voltar para o app no meio de uma atualização criava um segundo ciclo de atualizações em paralelo
+  if (polling) return;
+  polling = true;
   try {
     S.buses = await fetchBuses();
     S.busesUpdatedAt = Date.now();
@@ -318,8 +325,11 @@ async function poll() {
     updateTrip();
   } catch {
     S.liveError = "Sem conexão com o GPS da SEMOB";
+  } finally {
+    polling = false;
   }
   renderAll();
+  clearTimeout(pollTimer);
   if (!document.hidden || backgroundWork()) pollTimer = setTimeout(poll, POLL_MS);
 }
 // com aviso ou viagem ativa, continua atualizando mesmo com a tela em segundo plano
@@ -344,7 +354,7 @@ function startLocation() {
   }
   try {
     const saved = JSON.parse(localStorage.getItem(MANUAL_ME_KEY));
-    if (saved?.lat) { S.myLocation = saved; S.manualMe = true; }
+    if (Number.isFinite(saved?.lat) && Number.isFinite(saved?.lon)) { S.myLocation = saved; S.manualMe = true; }
   } catch {}
   if (!("geolocation" in navigator)) return;
   navigator.geolocation.watchPosition(
@@ -432,12 +442,16 @@ const alertIndex = (dir, stop) => S.alerts.findIndex((a) => a.dir === dir && a.s
 function toggleAlert(dir, along, stop) {
   const i = alertIndex(dir, stop);
   if (i >= 0) S.alerts.splice(i, 1);
-  else { S.alerts.push({ dir, along, stop }); prepareWarnings(); checkAlerts(); }
+  else { S.alerts.push({ dir, along, stop, at: Date.now() }); prepareWarnings(); checkAlerts(); }
   renderAll();
 }
 
+// aviso esquecido não pode manter o celular atualizando em segundo plano para sempre
+const ALERT_MAX_MS = 2 * 3_600_000;
+
 function checkAlerts() {
   S.alerts = S.alerts.filter((a) => {
+    if (Date.now() - a.at > ALERT_MAX_MS) return false;
     const live = liveEta(a.dir, a.along, S.buses);
     if (!live || live.minutes > ALERT_MIN) return true;
     warn(`Linha ${a.dir.line.numero} chegando`, `Está a ${live.minutes <= 1 ? "menos de 1 min" : `${live.minutes} min`} da ${a.stop.label}`);
@@ -447,7 +461,8 @@ function checkAlerts() {
 
 // ---------- viagem em andamento: acompanha a pessoa até o destino ----------
 
-const AT_STOP_M = 40;
+// o GPS do celular erra 20–50 m na cidade; 40 m deixava a pessoa "nunca chegar" à parada
+const AT_STOP_M = 60;
 const ON_ROUTE_M = 120;
 let wakeLock = null;
 
@@ -468,7 +483,8 @@ async function keepAwake(on) {
 function startTrip(option) {
   prepareWarnings();
   keepAwake(true);
-  push({ type: "trip", option, legIdx: 0, phase: "walk", warned: new Set() });
+  // guarda o destino: mudar o destino no meio da viagem não deve mudar o fim desta
+  push({ type: "trip", option, dest: S.dest, legIdx: 0, phase: "walk", warned: new Set() });
   updateTrip();
   renderAll();
 }
@@ -479,17 +495,22 @@ function warnOnce(t, key, title, body) {
   warn(title, body);
 }
 
-/** Onde a pessoa está no trajeto do ônibus; sem GPS confiável, estima pelo tempo desde o embarque. */
+/**
+ * Onde a pessoa está no trajeto do ônibus. Sem GPS confiável, estima pelo tempo desde o embarque
+ * ({byGps: false}): serve para mostrar e avisar, mas não para dar a pessoa como desembarcada.
+ */
 function rideAlong(t, leg) {
   const me = S.myLocation;
   if (me) {
     const p = leg.dir.project(me);
     if (p.distM < ON_ROUTE_M && p.alongM >= leg.boardAlong - 200 && p.alongM <= leg.alightAlong + 400) {
       t.along = Math.max(t.along, p.alongM); // ônibus não anda para trás
-      return t.along;
+      return { along: t.along, byGps: true };
     }
   }
-  return Math.max(t.along, leg.boardAlong + ((Date.now() - t.boardedAt) / 60_000) * leg.dir.speedMPerMin);
+  // a estimativa por tempo para antes da parada de descida: no trânsito o ônibus atrasa
+  const est = Math.min(leg.boardAlong + ((Date.now() - t.boardedAt) / 60_000) * leg.dir.speedMPerMin, leg.alightAlong - AT_STOP_M - 1);
+  return { along: Math.max(t.along, est), byGps: false };
 }
 
 /** Paradas que ainda faltam até a de descida (inclusive), a partir de [along]. */
@@ -509,7 +530,7 @@ function nextPhase(t) {
     if (t.legIdx < legs.length - 1) {
       t.legIdx++;
       t.phase = Geo.dist(leg.alightStop.pos, legs[t.legIdx].boardStop.pos) < AT_STOP_M ? "wait" : "walk";
-    } else t.phase = S.dest ? "walkEnd" : "done";
+    } else t.phase = t.dest ? "walkEnd" : "done";
   } else if (t.phase === "walkEnd") t.phase = "done";
 }
 
@@ -524,8 +545,11 @@ function updateTrip() {
   if (t.phase === "walk" || t.phase === "wait") {
     const p = me && leg.dir.project(me);
     // já está dentro do ônibus, andando pelo trajeto depois do ponto de embarque
-    if (t.phase === "wait" && p && p.distM < 60 && p.alongM > leg.boardAlong + 150 && p.alongM < leg.alightAlong) {
+    // (vale também se o GPS nunca "viu" a pessoa na parada)
+    if (p && p.distM < 60 && p.alongM > leg.boardAlong + 150 && p.alongM < leg.alightAlong) {
+      t.phase = "wait";
       nextPhase(t);
+      t.along = p.alongM;
     } else {
       const live = liveEta(leg.dir, leg.boardAlong, S.buses);
       if (live && live.minutes <= 2) {
@@ -534,12 +558,12 @@ function updateTrip() {
     }
   }
   if (t.phase === "ride") {
-    const along = rideAlong(t, leg);
+    const { along, byGps } = rideAlong(t, leg);
     const ahead = stopsAhead(leg, along);
-    if (ahead.length === 1) warnOnce(t, `desce${t.legIdx}`, "Desça na próxima parada", `${leg.alightStop.label} · linha ${num}`);
-    if (along >= leg.alightAlong - AT_STOP_M) nextPhase(t);
+    if (byGps && ahead.length === 1) warnOnce(t, `desce${t.legIdx}`, "Desça na próxima parada", `${leg.alightStop.label} · linha ${num}`);
+    if (byGps && along >= leg.alightAlong - AT_STOP_M) nextPhase(t);
   }
-  if (t.phase === "walkEnd" && me && S.dest && Geo.dist(me, S.dest.pos) <= 60) nextPhase(t);
+  if (t.phase === "walkEnd" && me && t.dest && Geo.dist(me, t.dest.pos) <= AT_STOP_M) nextPhase(t);
 }
 
 const fmtDist = (m) => (m >= 1000 ? `${(m / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km` : `${Math.round(m)} m`);
@@ -574,7 +598,7 @@ function fitPoints() {
   if (s.type === "trip") {
     // a pessoa e o próximo ponto que importa
     const leg = s.option.legs[s.legIdx];
-    const target = s.phase === "ride" ? leg.alightStop.pos : s.phase === "walkEnd" || s.phase === "done" ? S.dest?.pos : leg.boardStop.pos;
+    const target = s.phase === "ride" ? leg.alightStop.pos : s.phase === "walkEnd" || s.phase === "done" ? s.dest?.pos : leg.boardStop.pos;
     return [S.myLocation, target].filter(Boolean);
   }
   if (s.type === "line") return s.line.dirs[s.dirIndex]?.shape ?? [];
@@ -656,6 +680,7 @@ function renderAll() {
   syncHistory();
 }
 
+let lastTopHtml = null;
 function renderTop() {
   const s = screen();
   const top = $("top");
@@ -700,12 +725,16 @@ function renderTop() {
       : `Toque no mapa para escolher o ${f === "origin" ? "ponto de partida" : "destino"}`, true);
   }
   if (S.liveError) html += banner(S.liveError, false);
+  // redesenhar sem mudança fechava o seletor de horário aberto a cada atualização do GPS
+  if (lastTopHtml === html) return;
+  lastTopHtml = html;
   top.innerHTML = html;
 }
 
 const banner = (text, closable) =>
   `<div class="banner"><span>${esc(text)}</span>${closable ? `<button class="icon-btn" data-act="back">${icon("close", "", "Fechar")}</button>` : ""}</div>`;
 
+let lastPanelHtml = null;
 function renderPanel() {
   const panel = $("panel");
   const body = panel.querySelector(".panel-body");
@@ -720,9 +749,12 @@ function renderPanel() {
   else if (s.type === "trip") html = tripContent(s);
   else if (s.type === "line") html = lineContent(s.line, s.dirIndex);
   else html = stopContent(s.stop);
-  body.innerHTML = html;
-  body.dataset.view = viewKey;
-  body.scrollTop = keepScroll;
+  if (body.dataset.view !== viewKey || lastPanelHtml !== html) {
+    body.innerHTML = html;
+    body.dataset.view = viewKey;
+    body.scrollTop = keepScroll;
+    lastPanelHtml = html;
+  }
   updateLiveStatus();
 }
 
@@ -940,18 +972,20 @@ function tripContent(t) {
     extra = busInfo();
     button = "Entrei no ônibus";
   } else if (t.phase === "ride") {
-    const ahead = stopsAhead(leg, rideAlong(t, leg));
-    big = ahead.length <= 1 ? "Desça na próxima!" : `Faltam ${ahead.length} paradas`;
+    const { along, byGps } = rideAlong(t, leg);
+    const ahead = stopsAhead(leg, along);
+    big = ahead.length <= 1 ? "Desça na próxima!" : `${byGps ? "" : "Cerca de "}${ahead.length} paradas até descer`;
     sub = `Desça na ${leg.alightStop.label}`;
     if (ahead.length > 1) extra = `<p class="muted small">Próxima parada: ${esc(ahead[0].label)}</p>`;
+    if (!byGps) extra += `<p class="muted small">Sem o seu GPS no trajeto: contagem estimada pelo tempo. Confira as paradas pela janela.</p>`;
     button = "Desci do ônibus";
   } else if (t.phase === "walkEnd") {
     big = "Caminhe até o destino";
-    sub = walkInfo(S.dest.pos);
+    sub = walkInfo(t.dest.pos);
     button = "Cheguei";
   } else {
     big = "Você chegou! 🎉";
-    sub = S.dest?.name ?? "";
+    sub = t.dest?.name ?? "";
   }
   const urgent = t.phase === "ride" && big.startsWith("Desça");
   const steps = legs.map((l, i) => `<span class="${i < t.legIdx ? "done" : i === t.legIdx ? "now" : ""}">${badge(l.dir.line.numero)}</span>`).join(chevron);
@@ -1123,6 +1157,14 @@ document.addEventListener("click", (e) => {
     case "close-search": goBack(); break;
     case "me": mapView.center(S.myLocation, 16, mapPadding()); break;
     case "install": S.installPrompt?.prompt(); S.installPrompt = null; renderAll(); break;
+  }
+});
+
+// linhas da parada são <div role="button"> (têm o sino dentro): Enter/espaço também abrem
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.('[role="button"][data-act]')) {
+    e.preventDefault();
+    e.target.click();
   }
 });
 

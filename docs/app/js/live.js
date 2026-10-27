@@ -3,15 +3,26 @@
 const GPS_URL = "https://www.sistemas.dftrans.df.gov.br/service/gps/operacoes";
 const PHOTON_URL = "https://photon.komoot.io/api/";
 
+const TIMEOUT_MS = 12_000;
+
 async function getJson(url, signal) {
-  const r = await fetch(url, { headers: { Accept: "application/json" }, signal });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
+  // sem limite de tempo, uma resposta que nunca chega travava as atualizações para sempre
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  signal?.addEventListener("abort", () => ctl.abort());
+  try {
+    const r = await fetch(url, { headers: { Accept: "application/json" }, signal: ctl.signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Ônibus com GPS: {id, linha, pos, timeMs, speedKmh, heading}. */
 export async function fetchBuses() {
   const ops = await getJson(GPS_URL);
+  if (!Array.isArray(ops)) throw new Error("resposta inesperada do GPS");
   const out = [];
   for (const op of ops) {
     for (const v of op.veiculos ?? []) {
