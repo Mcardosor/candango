@@ -1,0 +1,4 @@
+# Cabeçalhos do Cloudflare Pages (o GitHub Pages ignora este arquivo).
+# O service worker precisa ser conferido a cada abertura, senão a versão nova demora a chegar.
+/app/sw.js
+  Cache-Control: no-cache

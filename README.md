@@ -20,7 +20,7 @@ de agora até daqui a 3 horas e quanto falta para o seu chegar no ponto.
 
 [![CI](https://github.com/Mcardosor/candango/actions/workflows/ci.yml/badge.svg)](https://github.com/Mcardosor/candango/actions/workflows/ci.yml)
 [![Versão](https://img.shields.io/github/v/release/Mcardosor/candango?label=vers%C3%A3o&color=0B8A5F)](https://github.com/Mcardosor/candango/releases/latest)
-[![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-blue)](LICENSE)
+[![Todos os direitos reservados](https://img.shields.io/badge/licen%C3%A7a-propriet%C3%A1ria-lightgrey)](LICENSE)
 ![Android 8+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 
 </div>
@@ -122,4 +122,4 @@ Contribuições são bem-vindas. Leia o [guia de contribuição](CONTRIBUTING.md
 
 ## 📄 Licença
 
-[MIT](LICENSE) © Matheus Cardoso Rodrigues. Os dados de transporte pertencem à SEMOB-DF, e os dados de mapa ao OpenStreetMap ([ODbL](https://opendatacommons.org/licenses/odbl/)).
+© Matheus Cardoso Rodrigues. Todos os direitos reservados; veja [LICENSE](LICENSE). Os dados de transporte pertencem à SEMOB-DF, e os dados de mapa ao OpenStreetMap ([ODbL](https://opendatacommons.org/licenses/odbl/)).

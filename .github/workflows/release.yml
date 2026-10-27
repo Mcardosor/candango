@@ -54,11 +54,17 @@ jobs:
           cp candango.apk "candango-$GITHUB_REF_NAME.apk"
           rm -f "$RUNNER_TEMP/candango-release.jks"
 
-      - name: Publica no GitHub Releases
+      # O código fica num repositório privado; o APK é publicado no repositório público
+      # Mcardosor/candango, para o link de download continuar aberto e o mesmo de sempre.
+      - name: Publica no repositório público de downloads
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Secret PUBLIC_REPO_TOKEN não configurado"
+            exit 1
+          fi
           gh release create "$GITHUB_REF_NAME" candango.apk "candango-$GITHUB_REF_NAME.apk" \
+            --repo Mcardosor/candango \
             --title "Candango $GITHUB_REF_NAME" \
-            --generate-notes \
             --notes "📥 **Para instalar:** baixe o \`candango.apk\` abaixo no seu Android e abra o arquivo. [Passo a passo](https://mcardosor.github.io/candango/#instalar)"
